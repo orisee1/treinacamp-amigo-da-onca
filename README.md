@@ -21,12 +21,12 @@ Site estático responsivo, pronto para GitHub Pages, com backend Supabase isolad
 2. Quando o projeto estiver pronto, abra o **SQL Editor**, crie uma query e execute integralmente `supabase/schema.sql`. Nunca aplique este SQL aos bancos antigos.
 3. Em **Edge Functions**, crie uma função chamada exatamente `indicacoes` e publique o código de `supabase/functions/indicacoes/index.ts`.
 4. Configure a função **sem verificação obrigatória de JWT** (`verify_jwt = false`): o envio é público e as ações administrativas exigem um token privado assinado no próprio backend. A função possui verificação de origem e limitação de tentativas.
-5. Em **Edge Function Secrets**, configure `ADMIN_PIN` com a senha solicitada pela administração (inicialmente `1904`). **Nunca coloque a senha em `config.js`, no HTML ou no repositório GitHub.** O valor deve existir apenas no Supabase. Se necessário, defina `ALLOWED_ORIGINS` como `https://SEUUSUARIO.github.io` (em nosso caso, `https://orisee1.github.io`).
+5. Após aplicar o schema, cadastre o hash e o salt da senha em `public.admin_config` pelo administrador Supabase. **Nunca coloque a senha no repositório GitHub.** Se necessário, defina `ALLOWED_ORIGINS` como `https://orisee1.github.io` nos segredos da função.
 6. O Supabase fornece `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` automaticamente para Edge Functions. Nunca as copie para o repositório. Aguarde os serviços ficarem prontos.
 
 ### Autenticação e restrições
 
-- A senha é validada no servidor e não é armazenada no navegador nem no repositório.
+- A senha é validada no servidor por comparação de hash SHA-256 com salt aleatório guardado no banco protegido com RLS. Nunca é armazenada no navegador nem no repositório.
 - Após autenticação, o backend emite uma sessão assinada com validade de até 8 horas, guardada somente no `sessionStorage` do navegador.
 - São permitidas no máximo 5 tentativas de login por janela de 15 minutos, por endereço de origem detectado; a proteção reduz, mas não elimina ataques distribuídos.
 - Apenas o backend, usando a chave de serviço privada, pode ler ou alterar as indicações. Tabelas com RLS não permitem acesso direto por visitantes.
@@ -52,7 +52,7 @@ window.TREINACAMP_CONFIG = {
 
 1. Crie um repositório público novo, por exemplo `treinacamp-amigo-da-onca`. Não reaproveite nem altere repositórios anteriores.
 2. Adicione os arquivos da pasta do projeto na raiz do novo repositório; não é necessário usar npm nem build.
-3. Em **Settings → Pages → Build and deployment**, selecione **Source: GitHub Actions**. A primeira execução do workflow pode falhar se o Pages ainda não estiver ativado; depois de ativar a opção, reexecute o workflow **Publicar Treinacamp no GitHub Pages** em **Actions** (ou faça um novo commit).
+3. Em **Settings → Pages → Build and deployment**, selecione **Source: GitHub Actions**. Depois de ativado, reexecute o workflow em **Actions** ou faça novo commit.
 4. O endereço será `https://orisee1.github.io/treinacamp-amigo-da-onca/` se criado na conta `orisee1` com esse nome.
 5. Acesse a página, faça um envio de teste autorizado, entre no painel pelo atalho **Alt + Shift + E**, confira a indicação, altere seu status e teste os downloads.
 
@@ -81,6 +81,6 @@ Este protótipo já contém aviso de privacidade e exigência de autorização d
 
 No terminal, dentro da pasta do site: `python -m http.server 5500`. Acesse `http://localhost:5500`. Os dados só serão gravados após configurar e publicar o backend, mesmo durante o teste local.
 
-## Status da publicação (15/10/2026)
+## Status inicial de implantação (15/10/2026)
 
-Arquivos enviados à branch `main`. O GitHub Pages precisa ser ativado uma vez em **Settings → Pages → Source: GitHub Actions**; a primeira tentativa automática falhou porque a integração não tem permissão para ativar Pages sozinha. O backend ainda não foi implantado porque a conexão Supabase do ChatGPT está autorizada apenas para outra organização. Até configurar o novo projeto Supabase, o formulário ficará bloqueado para evitar perda de dados.
+Os arquivos foram enviados à branch `main`. Para ativar a publicação pela primeira vez, é preciso abrir as configurações do repositório em **Settings → Pages** e escolher **GitHub Actions**, pois a ação automática não tem permissão de criar o serviço Pages na conta. A conexão Supabase do ChatGPT também precisa autorizar a organização **Campanha** antes de aplicar as migrações e publicar a Edge Function; enquanto isso, o formulário fica indisponível para envios reais.
