@@ -1,0 +1,39 @@
+name: Teste de integracao Treinacamp
+on:
+  push:
+    paths:
+      - '.github/workflows/teste-integracao.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validar JavaScript e arquivos de identidade
+        run: |
+          node --check app.js
+          test -s assets/logo-treinacamp-horizontal.webp
+          test -s assets/logo-treinacamp-simbolo.webp
+          test -s index.html
+      - name: Testar saude do backend Supabase
+        run: |
+          curl --fail-with-body -sS 'https://tbswlevtdbqspnkdkeuj.supabase.co/functions/v1/indicacoes' \
+            -H 'Content-Type: application/json' \
+            -H 'Origin: https://orisee1.github.io' \
+            -H 'apikey: sb_publishable_osf-t3g5GwfhQc5RugsxjQ_89G8LuBl' \
+            -d '{"action":"saude"}' -o health.json
+          python -c 'import json; d=json.load(open("health.json")); assert d.get("ok") is True, d; print("Supabase responde e banco/admin estao configurados")'
+      - name: Criar indicacao sintetica de teste unico
+        if: github.event_name == 'push'
+        run: |
+          curl --fail-with-body -sS 'https://tbswlevtdbqspnkdkeuj.supabase.co/functions/v1/indicacoes' \
+            -H 'Content-Type: application/json' \
+            -H 'Origin: https://orisee1.github.io' \
+            -H 'apikey: sb_publishable_osf-t3g5GwfhQc5RugsxjQ_89G8LuBl' \
+            -d '{"action":"criar","indicacao":{"aluno_nome":"Teste Automatico Treinacamp","aluno_whatsapp":"11000000000","aluno_rede_social":"@teste_aluno","amigo_nome":"Indicado Sintetico Treinacamp","amigo_whatsapp":"11000000001","amigo_rede_social":"@teste_amigo","amigo_curso":"Informatica","consentimento":true,"origem":"teste_automatico"}}' \
+            -o criado.json
+          python -c 'import json,uuid; d=json.load(open("criado.json")); assert d.get("ok") is True; uuid.UUID(d["id"]); print("Criacao sintética passou, protocolo:",d["id"][:8])'
