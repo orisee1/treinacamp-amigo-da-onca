@@ -3,7 +3,6 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 // Função de backend privada. NÃO colocar ADMIN_PIN ou SERVICE_ROLE_KEY no site estático.
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
-const ADMIN_PIN = Deno.env.get('ADMIN_PIN') || '';
 const allowedOrigins = (Deno.env.get('ALLOWED_ORIGINS') ||
   'https://orisee1.github.io,http://127.0.0.1:5500,http://localhost:5500,http://127.0.0.1:8080,http://localhost:8080')
   .split(',').map(s => s.trim()).filter(Boolean);
@@ -74,7 +73,7 @@ Deno.serve(async(req:Request):Promise<Response>=>{
   if(req.method==='OPTIONS')return new Response(null,{status:204,headers:cors(origin)});
   if(req.method!=='POST')return reply({error:'Método não permitido'},405,origin);
   if(origin&&!allowedOrigins.includes(origin))return reply({error:'Origem não autorizada'},403,origin);
-  if(!SUPABASE_URL||!SERVICE_KEY||!ADMIN_PIN)return reply({error:'O servidor ainda não foi configurado. Contate a administração.'},503,origin);
+  if(!SUPABASE_URL||!SERVICE_KEY)return reply({error:'O servidor ainda não foi configurado. Contate a administração.'},503,origin);
   if(Number(req.headers.get('content-length')||0)>6500)return reply({error:'Requisição muito grande'},413,origin);
   let input:Record<string,unknown>;
   try{input=await req.json();if(!input || typeof input!=='object'||Array.isArray(input))throw 0;}
@@ -86,6 +85,8 @@ Deno.serve(async(req:Request):Promise<Response>=>{
     if(action==='saude'){
       const {error}=await db.from('indicacoes').select('id').limit(1);
       if(error)return reply({error:'Banco ainda não está pronto'},503,origin);
+      const {data:admin,error:authError}=await db.from('admin_config').select('pin_hash').eq('singleton',true).maybeSingle();
+      if(authError || !admin)return reply({error:'Acesso administrativo ainda não configurado'},503,origin);
       return reply({ok:true},200,origin);
     }
     if(action==='criar'){
@@ -116,8 +117,12 @@ Deno.serve(async(req:Request):Promise<Response>=>{
       const l=await useLimit(rateKey,5,15);
       if(!l.allowed)return reply({error:'Acesso temporariamente bloqueado. Tente novamente em 15 minutos.'},429,origin);
       const given=String(input.senha??'');
-      // A senha permanece exclusivamente na configuração privada da Edge Function.
-      if(given!==ADMIN_PIN)return reply({error:`Senha incorreta. Restam até ${l.remaining} tentativa(s) neste acesso.`},401,origin);
+      // A senha não existe no código: o banco guarda somente salt e hash (acessíveis via service role).
+      const {data:admin,error:authError}=await db.from('admin_config').select('pin_salt,pin_hash').eq('singleton',true).single();
+      if(authError || !admin)return reply({error:'Administrador ainda não configurado.'},503,origin);
+      const expected=String(admin.pin_hash),actual=await hash(`${admin.pin_salt}:${given}`);
+      let mismatch=0;for(let i=0;i<64;i++)mismatch|=expected.charCodeAt(i)^actual.charCodeAt(i);
+      if(mismatch!==0)return reply({error:`Senha incorreta. Restam até ${l.remaining} tentativa(s) neste acesso.`},401,origin);
       await resetLimit(rateKey);
       return reply({ok:true,token:await createSession(),expira_em:'8 horas'},200,origin);
     }
