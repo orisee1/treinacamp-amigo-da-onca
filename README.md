@@ -52,7 +52,7 @@ window.TREINACAMP_CONFIG = {
 
 1. Crie um repositório público novo, por exemplo `treinacamp-amigo-da-onca`. Não reaproveite nem altere repositórios anteriores.
 2. Adicione os arquivos da pasta do projeto na raiz do novo repositório; não é necessário usar npm nem build.
-3. Em **Settings → Pages → Build and deployment**, selecione **Deploy from a branch**, a branch **main** e a pasta **/(root)**; salve.
+3. Em **Settings → Pages → Build and deployment**, selecione **Source: GitHub Actions**. A primeira execução do workflow pode falhar se o Pages ainda não estiver ativado; depois de ativar a opção, reexecute o workflow **Publicar Treinacamp no GitHub Pages** em **Actions** (ou faça um novo commit).
 4. O endereço será `https://orisee1.github.io/treinacamp-amigo-da-onca/` se criado na conta `orisee1` com esse nome.
 5. Acesse a página, faça um envio de teste autorizado, entre no painel pelo atalho **Alt + Shift + E**, confira a indicação, altere seu status e teste os downloads.
 
@@ -80,3 +80,7 @@ Este protótipo já contém aviso de privacidade e exigência de autorização d
 ### Teste local
 
 No terminal, dentro da pasta do site: `python -m http.server 5500`. Acesse `http://localhost:5500`. Os dados só serão gravados após configurar e publicar o backend, mesmo durante o teste local.
+
+## Status da publicação (15/10/2026)
+
+Arquivos enviados à branch `main`. O GitHub Pages precisa ser ativado uma vez em **Settings → Pages → Source: GitHub Actions**; a primeira tentativa automática falhou porque a integração não tem permissão para ativar Pages sozinha. O backend ainda não foi implantado porque a conexão Supabase do ChatGPT está autorizada apenas para outra organização. Até configurar o novo projeto Supabase, o formulário ficará bloqueado para evitar perda de dados.
