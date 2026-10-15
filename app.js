@@ -5,7 +5,7 @@
   const BONUS = Number(config.BONUS_POR_MATRICULA) || 50;
   const $ = id => document.getElementById(id);
   const statuses = { pendente:'Pendente', matriculado:'Matriculado', pago:'Pago', cancelado:'Cancelado' };
-  const state = { entries: [], filtered: [], token: sessionStorage.getItem('tc_admin_token') || '', ready: false };
+  const state = { entries: [], filtered: [], token: sessionStorage.getItem('tc_admin_token') || '', ready: true };
   const money = n => (Number(n) || 0).toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
   const onlyDigits = value => String(value ?? '').replace(/\D/g, '');
   const validPhone = value => /^(?:[1-9][1-9])\d{8,9}$/.test(onlyDigits(value));
@@ -37,23 +37,19 @@
   bindPhone('studentPhone');bindPhone('friendPhone');
   ['studentName','friendName','friendCourse'].forEach(id => $(id)?.addEventListener('input',()=>setError(id,'')));
   $('consent').addEventListener('change',()=>setError('consent',''));
-  // Não recebemos dados pessoais quando o backend estiver indisponível ou ainda não configurado.
+  // O formulário permanece disponível; erros de conexão são tratados no envio.
   const info=document.createElement('div');
   info.id='backendNotice';info.setAttribute('role','status');info.className='backend-notice';
-  $('referralForm').insertBefore(info,$('referralForm').firstChild);
+  // Sem aviso de bloqueio durante configuração.
   function setReady(value){
     state.ready=Boolean(value);
-    $('submitBtn').disabled=!state.ready;
+    $('submitBtn').disabled=false;
     $('submitText').textContent=state.ready?'Enviar indicação':'Formulário temporariamente indisponível';
-    info.hidden=state.ready;
-    if(!state.ready) info.textContent='As indicações ainda não estão liberadas. Estamos concluindo a configuração segura do sistema. Volte em breve.';
+    info.hidden=true;
   }
-  setReady(false);
-  async function checkReady(){
-    try {const response=await request('saude',{},'');setReady(response.ok===true);}
-    catch {setReady(false);}
-  }
-  checkReady();
+  setReady(true);
+  document.documentElement.dataset.viewport = window.matchMedia('(max-width: 760px)').matches ? 'mobile' : 'desktop';
+  window.addEventListener('resize', () => { document.documentElement.dataset.viewport = window.matchMedia('(max-width: 760px)').matches ? 'mobile' : 'desktop'; }, { passive:true });
 
   $('year').textContent=String(new Date().getFullYear());
   function openModal(id){$(id).hidden=false;document.body.style.overflow='hidden';}
@@ -75,14 +71,15 @@
   $('togglePin').addEventListener('click',()=>{const input=$('adminPin');input.type=input.type==='password'?'text':'password';});
   $('referralForm').addEventListener('submit',async e=>{
     e.preventDefault();clearError('submitError');
-    if(!state.ready){showError('submitError','O serviço ainda está indisponível. Tente novamente mais tarde.');return;}
     const payload={
       aluno_nome: $('studentName').value.trim().replace(/\s+/g,' '),
       aluno_whatsapp: onlyDigits($('studentPhone').value),
       aluno_curso: $('studentCourse').value.trim(),
+      aluno_rede_social: $('studentSocial').value.trim(),
       amigo_nome: $('friendName').value.trim().replace(/\s+/g,' '),
       amigo_whatsapp: onlyDigits($('friendPhone').value),
       amigo_curso: $('friendCourse').value,
+      amigo_rede_social: $('friendSocial').value.trim(),
       origem: new URLSearchParams(location.search).get('origem') || 'qr',
       consentimento: $('consent').checked,
     };
@@ -98,9 +95,9 @@
     $('submitBtn').disabled=true;$('submitText').textContent='Enviando indicação...';$('submitArrow').textContent='…';
     try{const r=await request('criar',{indicacao:payload},'');$('referralForm').hidden=true;$('successView').hidden=false;$('successRef').textContent=r.id?`Protocolo: ${r.id.slice(0,8).toUpperCase()}`:'';$('successView').scrollIntoView({behavior:'smooth',block:'center'});}
     catch(err){showError('submitError',err.message);}
-    finally{$('submitBtn').disabled=!state.ready;$('submitText').textContent=state.ready?'Enviar indicação':'Formulário temporariamente indisponível';$('submitArrow').textContent='→';}
+    finally{$('submitBtn').disabled=false;$('submitText').textContent='Enviar indicação';$('submitArrow').textContent='→';}
   });
-  $('newReferralBtn').addEventListener('click',()=>{$('referralForm').reset();$('referralForm').hidden=false;$('successView').hidden=true;clearError('submitError');['studentName','studentPhone','friendName','friendPhone','friendCourse','consent'].forEach(id=>setError(id,''));$('studentName').focus();});
+  $('newReferralBtn').addEventListener('click',()=>{$('referralForm').reset();$('referralForm').hidden=false;$('successView').hidden=true;clearError('submitError');['studentName','studentPhone','friendName','friendPhone','friendCourse','consent','studentSocial','friendSocial'].forEach(id=>setError(id,''));$('studentName').focus();});
   $('loginForm').addEventListener('submit',async e=>{
     e.preventDefault();clearError('loginError');
     const pin=$('adminPin').value;
@@ -123,7 +120,7 @@
   $('searchInput').addEventListener('input',refreshTable);$('statusFilter').addEventListener('change',refreshTable);
   function refreshTable(){
     const all=state.entries,q=$('searchInput').value.toLocaleLowerCase('pt-BR').trim(),status=$('statusFilter').value;
-    state.filtered=all.filter(r=>(status==='all'||r.status===status)&&(!q||[r.aluno_nome,r.aluno_whatsapp,r.amigo_nome,r.amigo_whatsapp,r.aluno_curso,r.amigo_curso].some(v=>String(v||'').toLocaleLowerCase('pt-BR').includes(q))));
+    state.filtered=all.filter(r=>(status==='all'||r.status===status)&&(!q||[r.aluno_nome,r.aluno_whatsapp,r.amigo_nome,r.amigo_whatsapp,r.aluno_curso,r.amigo_curso,r.aluno_rede_social,r.amigo_rede_social].some(v=>String(v||'').toLocaleLowerCase('pt-BR').includes(q))));
     $('statTotal').textContent=all.length.toLocaleString('pt-BR');
     $('statEnrolled').textContent=all.filter(r=>r.status==='matriculado'||r.status==='pago').length.toLocaleString('pt-BR');
     $('statOwed').textContent=money(all.filter(r=>r.status==='matriculado').length*BONUS);
@@ -135,8 +132,8 @@
     const frag=document.createDocumentFragment();state.filtered.forEach(r=>{
       const tr=document.createElement('tr');
       const date=document.createElement('td');date.textContent=fmtDate(r.criado_em);tr.appendChild(date);
-      addPerson(tr,r.aluno_nome,r.aluno_whatsapp);
-      addPerson(tr,r.amigo_nome,r.amigo_whatsapp);
+      addPerson(tr,r.aluno_nome,r.aluno_whatsapp,r.aluno_rede_social);
+      addPerson(tr,r.amigo_nome,r.amigo_whatsapp,r.amigo_rede_social);
       const course=document.createElement('td');course.textContent=r.amigo_curso;tr.appendChild(course);
       const scell=document.createElement('td'),wrapper=document.createElement('span'),sel=document.createElement('select');wrapper.className=`badge-status status-${r.status}`;sel.className='status-select';sel.setAttribute('aria-label',`Status da indicação ${r.amigo_nome}`);
       Object.keys(statuses).forEach(key=>{const opt=document.createElement('option');opt.value=key;opt.textContent=statuses[key];sel.appendChild(opt)});sel.value=r.status;
@@ -145,20 +142,20 @@
       const bonus=document.createElement('td');bonus.className=r.status==='pago'||r.status==='matriculado'?'bonus-paid':'bonus-pending';bonus.textContent=['pago','matriculado'].includes(r.status)?money(BONUS):'—';tr.appendChild(bonus);frag.appendChild(tr);
     });tbody.appendChild(frag);
   }
-  function addPerson(tr,name,phone){const td=document.createElement('td'),strong=document.createElement('span'),link=document.createElement('a');strong.className='table-name';strong.textContent=name;link.className='table-secondary';link.textContent=formatPhone(phone);link.href=`https://wa.me/55${onlyDigits(phone)}`;link.target='_blank';link.rel='noopener noreferrer';td.append(strong,link);tr.appendChild(td);}
+  function addPerson(tr,name,phone,social){const td=document.createElement('td'),strong=document.createElement('span'),link=document.createElement('a');strong.className='table-name';strong.textContent=name;link.className='table-secondary';link.textContent=formatPhone(phone);link.href=`https://wa.me/55${onlyDigits(phone)}`;link.target='_blank';link.rel='noopener noreferrer';td.append(strong,link);if(social){const sm=document.createElement('span');sm.className='table-social';sm.textContent='@ '+social.replace(/^@/,'');td.appendChild(sm);}tr.appendChild(td);}
   // Prefixos potencialmente interpretados como fórmulas pelo Excel não podem ser exportados como fórmulas.
   const safeCell = value => { const s=String(value??'');return /^[\s]*[=+\-@\t\r]/.test(s)?`'${s}`:s; };
   const exportData=()=>state.filtered.map(r=>[
     fmtDate(r.criado_em),safeCell(r.aluno_nome),safeCell(formatPhone(r.aluno_whatsapp)),safeCell(r.aluno_curso),safeCell(r.amigo_nome),safeCell(formatPhone(r.amigo_whatsapp)),safeCell(r.amigo_curso),statuses[r.status]||r.status,
-    ['matriculado','pago'].includes(r.status)?BONUS:0,r.status==='pago'?'Sim':'Não',safeCell(r.origem||''),r.id
+    ['matriculado','pago'].includes(r.status)?BONUS:0,r.status==='pago'?'Sim':'Não',safeCell(r.origem||''),r.id,safeCell(r.aluno_rede_social||''),safeCell(r.amigo_rede_social||'')
   ]);
-  const columns=['Data','Aluno que indicou','WhatsApp do aluno','Curso do aluno','Amigo indicado','WhatsApp do amigo','Curso de interesse','Status','Bônus (R$)','Pago?','Origem','Identificador'];
+  const columns=['Data','Aluno que indicou','WhatsApp do aluno','Curso do aluno','Amigo indicado','WhatsApp do amigo','Curso de interesse','Status','Bônus (R$)','Pago?','Origem','Identificador','Rede social de quem indicou','Rede social do amigo'];
   function makeFilename(ext){const now=new Date(),ds=[now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0')].join('-');return `Treinacamp_Indicacoes_${ds}.${ext}`;}
   $('exportXlsx').addEventListener('click',()=>{
     if(!window.XLSX){toast('Biblioteca Excel indisponível. Verifique sua conexão com a internet.',true);return;}
     const rows=exportData(),wb=XLSX.utils.book_new();
     const sheet=XLSX.utils.aoa_to_sheet([columns,...rows]);
-    sheet['!cols']=[{wch:20},{wch:30},{wch:20},{wch:24},{wch:30},{wch:20},{wch:24},{wch:16},{wch:14},{wch:10},{wch:18},{wch:39}];
+    sheet['!cols']=[{wch:20},{wch:30},{wch:20},{wch:24},{wch:30},{wch:20},{wch:24},{wch:16},{wch:14},{wch:10},{wch:18},{wch:39},{wch:32},{wch:32}];
     sheet['!autofilter']={ref:sheet['!ref']};sheet['!freeze']={xSplit:0,ySplit:1};
     XLSX.utils.book_append_sheet(wb,sheet,'Indicações');
     const summary=[['TREINACAMP • AMIGO DA ONÇA'],['RELATÓRIO DE INDICAÇÕES'],['Gerado em',fmtDate(new Date().toISOString())],['Filtro de status',$('statusFilter').selectedOptions[0]?.textContent||'Todos'],['Indicações exportadas',rows.length],['Matriculados (filtro)',state.filtered.filter(r=>['matriculado','pago'].includes(r.status)).length],['Bônus a pagar (filtro)',state.filtered.filter(r=>r.status==='matriculado').length*BONUS],['Bônus pagos (filtro)',state.filtered.filter(r=>r.status==='pago').length*BONUS]];
