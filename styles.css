@@ -14,3 +14,58 @@
 /* Estado de configuração: bloqueia envio até o backend ficar operacional. */
 .backend-notice{margin:4px 0 22px;padding:14px 17px;border:1px solid rgba(225,142,37,.4);background:rgba(225,142,37,.08);color:#81460c;font-size:14px;line-height:1.6;border-radius:12px;font-weight:600}
 .backend-notice[hidden]{display:none}
+
+
+/* Identidade visual oficial da escola */
+.brand-logo{display:block;width:218px;max-width:100%;height:auto;object-fit:contain}
+.brand{min-width:0;flex-shrink:1}
+.footer-logo{display:block;width:185px;max-width:100%;height:auto;object-fit:contain;background:#fff;border-radius:8px;padding:4px}
+.admin-logo{display:block;width:46px;height:46px;object-fit:contain;background:#fff;border:1px solid #dce4f1;border-radius:11px;padding:5px;flex-shrink:0}
+.social-field{margin-top:7px}
+.social-field small{display:block;margin-top:6px;color:#8390a2;font-size:11px}
+.table-social{display:block;font-size:10px;color:#355d99;margin-top:4px;max-width:200px;overflow-wrap:anywhere}
+/* Bordas e profundidade para separar cartões dos fundos claros */
+.step-card,.form-card,.stat-card,.data-panel,.modal-card,.reward-card,.float-badge,.end-cta,.privacy-dialog,.login-dialog{
+  border:1px solid #d7e1ef;
+  box-shadow:0 8px 28px rgba(9,37,79,.085),0 2px 7px rgba(9,37,79,.045)
+}
+.form-card{border:1.5px solid #cfdbeb;box-shadow:0 22px 60px rgba(10,38,82,.115),0 4px 13px rgba(10,38,82,.055)}
+.step-card{box-shadow:0 5px 20px rgba(10,38,82,.078)}
+.modal-card{box-shadow:0 28px 90px rgba(5,20,48,.28);border:1px solid #ccd8ea}
+.data-panel,.stat-card{box-shadow:0 5px 23px rgba(10,38,82,.075)}
+.reward-card{border-color:rgba(255,255,255,.2);box-shadow:0 16px 40px rgba(5,30,80,.2)}
+.red-stat{border-color:#bd1728;box-shadow:0 8px 23px rgba(193,28,46,.14)}
+.field input,.field select{min-height:46px;background:#f9fbfe;border-color:#ced8e8}
+.field input:focus,.field select:focus{border-color:#235aa8;background:#fff;box-shadow:0 0 0 4px rgba(28,83,168,.09)}
+.btn-submit:not(:disabled){background:#d91f30;color:#fff}
+@media(max-width:760px){
+  .brand-logo{width:166px}
+  .nav-links{gap:9px}
+  .nav-button{white-space:nowrap}
+  .hero-visual{max-width:410px}
+  .form-layout{gap:32px}
+  .form-card{box-shadow:0 12px 38px rgba(10,38,82,.105)}
+  .form-card legend{flex-wrap:wrap}
+  .form-card legend small{margin-left:0;width:100%;padding-left:39px}
+  .admin-logo{width:35px;height:35px}
+}
+@media(max-width:480px){
+  .container{padding-left:16px;padding-right:16px}
+  .nav{gap:8px}
+  .brand-logo{width:148px}
+  .nav-button{padding:11px 10px;font-size:10px}
+  .hero h1{font-size:clamp(38px,11vw,47px)}
+  .hero-visual{width:94%;padding:6px}
+  .float-badge{left:-7px;bottom:-21px;max-width:calc(100% - 10px)}
+  .float-badge strong{font-size:20px}
+  .form-section{padding:48px 0 64px}
+  .form-card{padding:23px 16px}
+  .form-header h3{font-size:23px}
+  .form-card legend{font-size:16px}
+  .field input,.field select{font-size:16px}
+  .form-card .btn-submit{width:100%;min-height:52px;white-space:normal}
+  .footer-logo{width:160px}
+  .admin-brand>span:last-child{font-size:10px}
+  .modal-card{max-width:calc(100vw - 24px)}
+}
+@media(max-width:350px){.brand-logo{width:128px}.nav-button{font-size:9px}.container{padding-left:12px;padding-right:12px}.hero h1{font-size:37px}}
