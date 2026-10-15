@@ -97,17 +97,17 @@ Deno.serve(async(req:Request):Promise<Response>=>{
       const alunoNome=text(d.aluno_nome,120),amigoNome=text(d.amigo_nome,120);
       const alunoPhone=digits(d.aluno_whatsapp),amigoPhone=digits(d.amigo_whatsapp);
       const curso=text(d.amigo_curso,100),alunoCurso=text(d.aluno_curso,100);
+      const alunoRedeSocial=text(d.aluno_rede_social,120),amigoRedeSocial=text(d.amigo_rede_social,120);
       if(alunoNome.length<3||amigoNome.length<3||!validPhone(alunoPhone)||!validPhone(amigoPhone)||curso.length<2||d.consentimento!==true)
         return reply({error:'Revise os campos e confirme a autorização para contato.'},422,origin);
       if(alunoPhone===amigoPhone)return reply({error:'O WhatsApp indicado precisa ser diferente do seu.'},422,origin);
       const {data,error}=await db.from('indicacoes').insert({
-        aluno_nome:alunoNome,aluno_whatsapp:alunoPhone,aluno_curso:alunoCurso||null,
-        amigo_nome:amigoNome,amigo_whatsapp:amigoPhone,amigo_curso:curso,
+        aluno_nome:alunoNome,aluno_whatsapp:alunoPhone,aluno_curso:alunoCurso||null,aluno_rede_social:alunoRedeSocial||null,
+        amigo_nome:amigoNome,amigo_whatsapp:amigoPhone,amigo_curso:curso,amigo_rede_social:amigoRedeSocial||null,
         consentimento_confirmado:true,origem:text(d.origem||'qr',40)||'qr',
       }).select('id').single();
       if(error){
         if(error.code==='23505')return reply({error:'Este amigo já consta em uma indicação da campanha.'},409,origin);
-        if(error.message.includes('limite_de_dez_indicacoes'))return reply({error:'Você já atingiu o limite de 10 indicações.'},409,origin);
         return reply({error:'Não foi possível salvar sua indicação. Tente novamente.'},500,origin);
       }
       return reply({ok:true,id:data.id},201,origin);
@@ -132,7 +132,7 @@ Deno.serve(async(req:Request):Promise<Response>=>{
     if(action==='listar'){
       const entries:Record<string,unknown>[]=[];
       for(let offset=0;offset<50000;offset+=500){
-        const {data,error}=await db.from('indicacoes').select('id,criado_em,aluno_nome,aluno_whatsapp,aluno_curso,amigo_nome,amigo_whatsapp,amigo_curso,origem,status,matriculado_em,pago_em').order('criado_em',{ascending:false}).range(offset,offset+499);
+        const {data,error}=await db.from('indicacoes').select('id,criado_em,aluno_nome,aluno_whatsapp,aluno_curso,aluno_rede_social,amigo_nome,amigo_whatsapp,amigo_rede_social,amigo_curso,origem,status,matriculado_em,pago_em').order('criado_em',{ascending:false}).range(offset,offset+499);
         if(error)throw error;
         entries.push(...(data||[]));if(!data||data.length<500)break;
       }
