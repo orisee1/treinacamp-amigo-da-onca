@@ -51,11 +51,22 @@ create table if not exists public.limites_api (
   bloqueado_ate timestamptz
 );
 
+-- Credencial administrativa armazenada exclusivamente no banco, com hash e salt aleatório.
+-- Inserir a credencial APÓS a migração via ferramenta administrativa autorizada.
+-- Nunca inserir a senha em um arquivo público, commit ou migração.
+create table if not exists public.admin_config (
+  singleton boolean primary key default true check (singleton = true),
+  pin_salt text not null check(length(pin_salt) >= 20),
+  pin_hash char(64) not null check(pin_hash ~ '^[0-9a-f]{64}$')
+);
+
 -- Banco bloqueado para acesso público direto; só a Edge Function usa service_role.
 alter table public.indicacoes enable row level security;
 alter table public.limites_api enable row level security;
+alter table public.admin_config enable row level security;
 revoke all on public.indicacoes from anon, authenticated;
 revoke all on public.limites_api from anon, authenticated;
+revoke all on public.admin_config from anon, authenticated;
 revoke all on function public.limitar_indicacoes() from public, anon, authenticated;
 
 comment on table public.indicacoes is 'Campanha Amigo da Onça: dados pessoais com acesso exclusivo pelo backend';
