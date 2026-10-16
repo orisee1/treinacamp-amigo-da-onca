@@ -1,6 +1,6 @@
 # Treinacamp — Amigo da Onça · Indique e Ganhe
 
-Site estático responsivo, pronto para GitHub Pages, com backend Supabase isolado, formulário público e painel administrativo com exportação `.xlsx` e `.pdf`.
+Site estático responsivo, pronto para GitHub Pages, com backend Supabase isolado, formulário público com lote de no mínimo 10 pessoas por envio e painel administrativo com exportação `.xlsx` e `.pdf`.
 
 ## Estrutura
 
@@ -30,7 +30,7 @@ Site estático responsivo, pronto para GitHub Pages, com backend Supabase isolad
 - Após autenticação, o backend emite uma sessão assinada com validade de até 8 horas, guardada somente no `sessionStorage` do navegador.
 - São permitidas no máximo 5 tentativas de login por janela de 15 minutos, por endereço de origem detectado; a proteção reduz, mas não elimina ataques distribuídos.
 - Apenas o backend, usando a chave de serviço privada, pode ler ou alterar as indicações. Tabelas com RLS não permitem acesso direto por visitantes.
-- O banco exige consentimento, não permite autindicação, limita cada WhatsApp indicador a 10 inscrições e permite cada WhatsApp indicado somente uma vez na campanha.
+- O banco exige consentimento, não permite autoindicação e permite cada WhatsApp indicado somente uma vez na campanha. **Cada envio precisa conter pelo menos 10 pessoas**, sem limite comercial máximo. A lista inteira é validada e inserida em uma transação atômica.
 - Este controle por senha curta é compatível com o pedido, **mas um PIN de quatro números não é adequado como única proteção de dados pessoais no longo prazo**. Recomenda-se migrar para autenticação individual com MFA antes de uso em larga escala.
 
 ## 2. Conectar o site
@@ -64,7 +64,7 @@ Após a publicação, abra `https://orisee1.github.io/treinacamp-amigo-da-onca/q
 
 - Em qualquer parte do site, pressione **Alt + Shift + E**.
 - Informe a senha secreta configurada no Supabase.
-- Pesquise por aluno, indicado, WhatsApp ou curso; filtre os status.
+- Pesquise por aluno, indicado, WhatsApp ou rede social do aluno; filtre os status.
 - **Pendente** = indicação recebida; **Matriculado** = matrícula confirmada e prêmio ainda a pagar; **Pago** = prêmio pago; **Cancelado** = indicação sem prêmio.
 - Os indicadores mostram número total, matrículas confirmadas, saldo a pagar e pagamentos realizados.
 - **Exportar Excel** gera duas abas, `Indicações` e `Resumo`, com os registros filtrados e campos úteis para conferência.
@@ -73,7 +73,7 @@ Após a publicação, abra `https://orisee1.github.io/treinacamp-amigo-da-onca/q
 
 ## 6. Privacidade e operação
 
-Este protótipo já contém aviso de privacidade e exigência de autorização do indicado. Antes da coleta real, substitua o aviso genérico por uma política de privacidade com identificação da escola, responsável pelo tratamento, canal de contato, regras de retenção e exclusão de dados, conforme a LGPD. Alinhe também o regulamento da campanha (pagamento, condições de matrícula, elegibilidade, limite de 10 amigos) com a direção da escola.
+Este protótipo já contém aviso de privacidade e exigência de autorização do indicado. Antes da coleta real, substitua o aviso genérico por uma política de privacidade com identificação da escola, responsável pelo tratamento, canal de contato, regras de retenção e exclusão de dados, conforme a LGPD. Alinhe também o regulamento da campanha (pagamento, condições de matrícula, elegibilidade e mínimo de 10 amigos por envio) com a direção da escola.
 
 **Atenção ao plano gratuito:** projetos gratuitos podem ser pausados por inatividade. Verifique as condições do Supabase e, antes de usar em uma campanha com volume importante, estabeleça uma rotina de cópia de segurança.
 
@@ -81,6 +81,17 @@ Este protótipo já contém aviso de privacidade e exigência de autorização d
 
 No terminal, dentro da pasta do site: `python -m http.server 5500`. Acesse `http://localhost:5500`. Os dados só serão gravados após configurar e publicar o backend, mesmo durante o teste local.
 
-## Status inicial de implantação (15/10/2026)
+## Operação atualizada (16/10/2026)
 
-Os arquivos foram enviados à branch `main`. Para ativar a publicação pela primeira vez, é preciso abrir as configurações do repositório em **Settings → Pages** e escolher **GitHub Actions**, pois a ação automática não tem permissão de criar o serviço Pages na conta. A conexão Supabase do ChatGPT também precisa autorizar a organização **Campanha** antes de aplicar as migrações e publicar a Edge Function; enquanto isso, o formulário fica indisponível para envios reais.
+- Página oficial: https://orisee1.github.io/treinacamp-amigo-da-onca/
+- O aluno preenche **nome, WhatsApp e rede social opcional** uma vez.
+- Para cada indicado, informa **nome completo e WhatsApp** e pressiona **Indicar amigo**.
+- Os amigos aparecem em cartões removíveis e um contador mostra quantos faltam para 10; após esse mínimo pode continuar adicionando quantos quiser.
+- Se tentar enviar antes de 10, o formulário apresenta um aviso. Nome e WhatsApp incompletos impedem adicionar um novo cartão; telefones repetidos são barrados.
+- O servidor recebe `criar_lote` e chama `criar_indicacoes_em_lote`, garantindo **tudo ou nada** na gravação. O antigo envio individual `criar` não é mais aceito.
+- Após confirmação de sucesso do servidor, o aluno vê um modal com confetes e a quantidade enviada.
+- O painel ADMIN continua acessível via **Alt + Shift + E** e mantém exportações Excel e PDF, agora sem colunas de curso obrigatórias.
+- Existe um workflow de teste em `.github/workflows/teste-integracao.yml`. Dados fictícios gerados no teste devem ser excluídos após cada execução para não entrarem nos relatórios.
+- A política de privacidade da campanha precisa permanecer coerente com o tratamento de dados de dez ou mais terceiros por envio.
+
+O repositório contém o código da estrutura atual; os arquivos `supabase/schema.sql` e `supabase/functions/indicacoes/index.ts` estão alinhados ao banco e à função do projeto.
