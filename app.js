@@ -33,25 +33,25 @@
     if(!response.ok){ if(response.status===401 && action!=='login'){ signOut(false); } throw new Error(result.error||`Não foi possível concluir a solicitação (${response.status}).`); }
     return result;
   }
-  function bindPhone(id){ $(id)?.addEventListener('input',e=>{e.target.value=formatPhone(e.target.value);setError(id,'');}); }
-  bindPhone('studentPhone');bindPhone('friendPhone');
-  ['studentName','friendName','friendCourse'].forEach(id => $(id)?.addEventListener('input',()=>setError(id,'')));
-  $('consent').addEventListener('change',()=>setError('consent',''));
-  // O formulário permanece disponível; erros de conexão são tratados no envio.
-  const info=document.createElement('div');
-  info.id='backendNotice';info.setAttribute('role','status');info.className='backend-notice';
-  // Sem aviso de bloqueio durante configuração.
-  function setReady(value){
-    state.ready=Boolean(value);
-    $('submitBtn').disabled=false;
-    $('submitText').textContent=state.ready?'Enviar indicação':'Formulário temporariamente indisponível';
-    info.hidden=true;
+  function bindPhone(id) {
+    $(id)?.addEventListener('input', e => {
+      e.target.value=formatPhone(e.target.value);
+      setError(id,'');
+    });
   }
-  setReady(true);
-  document.documentElement.dataset.viewport = window.matchMedia('(max-width: 760px)').matches ? 'mobile' : 'desktop';
-  window.addEventListener('resize', () => { document.documentElement.dataset.viewport = window.matchMedia('(max-width: 760px)').matches ? 'mobile' : 'desktop'; }, { passive:true });
+  bindPhone('studentPhone');
+  bindPhone('friendPhone');
+  ['studentName','friendName','studentSocial'].forEach(id=>$(id)?.addEventListener('input',()=>setError(id,'')));
+  $('consent').addEventListener('change',()=>setError('consent',''));
+  const friends=[];
+  let sending=false;
 
+  document.documentElement.dataset.viewport=window.matchMedia('(max-width: 760px)').matches?'mobile':'desktop';
+  window.addEventListener('resize',()=>{
+    document.documentElement.dataset.viewport=window.matchMedia('(max-width: 760px)').matches?'mobile':'desktop';
+  },{passive:true});
   $('year').textContent=String(new Date().getFullYear());
+
   function openModal(id){$(id).hidden=false;document.body.style.overflow='hidden';}
   function closeModal(id){$(id).hidden=true;document.body.style.overflow='';}
   $('privacyLink').addEventListener('click',e=>{e.preventDefault();openModal('privacyModal');});
@@ -59,45 +59,155 @@
   $('closePrivacy').addEventListener('click',()=>closeModal('privacyModal'));
   $('agreePrivacy').addEventListener('click',()=>closeModal('privacyModal'));
   $('closeLogin').addEventListener('click',()=>closeModal('loginModal'));
-  document.querySelectorAll('[data-close]').forEach(el=>el.addEventListener('click',()=>closeModal(el.dataset.close==='login'?'loginModal':'privacyModal')));
+  document.querySelectorAll('[data-close]').forEach(el=>el.addEventListener('click',()=>{
+    closeModal(el.dataset.close==='login'?'loginModal':'privacyModal');
+  }));
   document.addEventListener('keydown',e=>{
-    if(e.key==='Escape'){closeModal('loginModal');closeModal('privacyModal');}
+    if(e.key==='Escape'){
+      closeModal('loginModal');
+      closeModal('privacyModal');
+    }
     if(e.altKey&&e.shiftKey&&e.key.toLowerCase()==='e'){
       e.preventDefault();
       if(!$('adminDashboard').hidden)return;
       $('adminPin').value='';clearError('loginError');openModal('loginModal');setTimeout(()=>$('adminPin').focus(),60);
     }
   });
-  $('togglePin').addEventListener('click',()=>{const input=$('adminPin');input.type=input.type==='password'?'text':'password';});
+  $('togglePin').addEventListener('click',()=>{
+    const input=$('adminPin');input.type=input.type==='password'?'text':'password';
+  });
+
+  function renderFriends(){
+    const n=friends.length,remaining=Math.max(0,10-n);
+    $('friendsCount').textContent=`${n} / 10`;
+    $('progressStatus').textContent=remaining?`Faltam ${remaining}`:'Pronto para enviar!';
+    $('progressStatus').classList.toggle('complete',!remaining);
+    $('friendsProgress').setAttribute('aria-valuenow',String(Math.min(n,10)));
+    $('friendsProgressBar').style.width=`${Math.min(100,n*10)}%`;
+    $('friendsHint').textContent=remaining
+      ?`Faltam ${remaining} ${remaining===1?'amigo':'amigos'} para atingir o mínimo de 10 indicações.`
+      :`Você já adicionou ${n} ${n===1?'pessoa':'pessoas'} e pode enviar ou continuar adicionando.`;
+    $('friendsEmpty').hidden=n>0;
+    const grid=$('friendsGrid');grid.replaceChildren();
+    friends.forEach((friend,index)=>{
+      const card=document.createElement('article');
+      card.className='friend-card';card.setAttribute('role','listitem');
+      const number=document.createElement('span');number.className='friend-card-number';number.textContent=String(index+1).padStart(2,'0');
+      const info=document.createElement('div');info.className='friend-card-info';
+      const name=document.createElement('strong');name.textContent=friend.nome;
+      const phone=document.createElement('span');phone.textContent=formatPhone(friend.whatsapp);
+      info.append(name,phone);
+      const remove=document.createElement('button');remove.type='button';remove.className='friend-remove';
+      remove.textContent='×';remove.title='Remover indicação';
+      remove.setAttribute('aria-label',`Remover ${friend.nome} da lista`);
+      remove.disabled=sending;
+      remove.addEventListener('click',()=>{friends.splice(index,1);renderFriends();});
+      card.append(number,info,remove);
+      grid.appendChild(card);
+    });
+  }
+
+  function validateFriend(){
+    const name=$('friendName').value.trim().replace(/\s+/g,' ');
+    const phone=onlyDigits($('friendPhone').value);
+    let valid=true;
+    if(name.length<3){setError('friendName','Informe o nome completo da pessoa.');valid=false;}
+    if(!phone){setError('friendPhone','O WhatsApp é obrigatório.');valid=false;}
+    else if(!validPhone(phone)){setError('friendPhone','Informe um WhatsApp válido com DDD.');valid=false;}
+    else if(phone===onlyDigits($('studentPhone').value)){setError('friendPhone','Você não pode indicar seu próprio WhatsApp.');valid=false;}
+    else if(friends.some(f=>f.whatsapp===phone)){setError('friendPhone','Este WhatsApp já está na sua lista.');valid=false;}
+    return valid?{nome:name,whatsapp:phone}:null;
+  }
+
+  function addFriend(){
+    if(sending)return;
+    clearError('submitError');
+    const friend=validateFriend();
+    if(!friend){($('referralForm').querySelector('.is-invalid')||$('friendName')).focus();return;}
+    friends.push(friend);
+    $('friendName').value='';$('friendPhone').value='';
+    setError('friendName','');setError('friendPhone','');
+    renderFriends();$('friendName').focus();
+    if(friends.length===10)toast('Você chegou às 10 indicações mínimas! Pode enviar ou continuar adicionando.');
+  }
+  $('addFriendBtn').addEventListener('click',addFriend);
+  ['friendName','friendPhone'].forEach(id=>$(id).addEventListener('keydown',e=>{
+    if(e.key==='Enter'&&!e.isComposing){e.preventDefault();addFriend();}
+  }));
+  renderFriends();
+
+  function launchConfetti(){
+    const stage=$('confettiStage');stage.replaceChildren();
+    if(window.matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+    const colors=['#e32336','#173b73','#ffca55','#75bfd1','#fff'];
+    for(let i=0;i<75;i++){
+      const item=document.createElement('i');item.className='confetti-piece';
+      item.style.setProperty('--x',`${Math.round(Math.random()*100)}%`);
+      item.style.setProperty('--delay',`${(Math.random()*2.3).toFixed(2)}s`);
+      item.style.setProperty('--duration',`${(2.8+Math.random()*2).toFixed(2)}s`);
+      item.style.setProperty('--rotation',`${Math.round(Math.random()*720)}deg`);
+      item.style.backgroundColor=colors[i%colors.length];
+      stage.appendChild(item);
+    }
+  }
   $('referralForm').addEventListener('submit',async e=>{
-    e.preventDefault();clearError('submitError');
-    const payload={
-      aluno_nome: $('studentName').value.trim().replace(/\s+/g,' '),
-      aluno_whatsapp: onlyDigits($('studentPhone').value),
-      aluno_curso: $('studentCourse').value.trim(),
-      aluno_rede_social: $('studentSocial').value.trim(),
-      amigo_nome: $('friendName').value.trim().replace(/\s+/g,' '),
-      amigo_whatsapp: onlyDigits($('friendPhone').value),
-      amigo_curso: $('friendCourse').value,
-      amigo_rede_social: $('friendSocial').value.trim(),
-      origem: new URLSearchParams(location.search).get('origem') || 'qr',
-      consentimento: $('consent').checked,
+    e.preventDefault();if(sending)return;
+    clearError('submitError');
+    // Um contato começado não deve ser perdido silenciosamente ao enviar a lista.
+    if($('friendName').value.trim()||$('friendPhone').value.trim()){
+      const entry=validateFriend();
+      if(entry)showError('submitError','Você começou outra indicação. Clique em "Indicar amigo" para incluí-la na lista antes do envio.');
+      else showError('submitError','Complete o nome e o WhatsApp da indicação que está preenchendo.');
+      return;
+    }
+    if(friends.length<10){
+      showError('submitError',`É necessário cadastrar no mínimo 10 pessoas. Você adicionou ${friends.length}; faltam ${10-friends.length}.`);
+      $('submitError').scrollIntoView({behavior:'smooth',block:'center'});return;
+    }
+    const aluno={
+      nome:$('studentName').value.trim().replace(/\s+/g,' '),
+      whatsapp:onlyDigits($('studentPhone').value),
+      rede_social:$('studentSocial').value.trim()
     };
     let valid=true;
-    if(payload.aluno_nome.length<3){setError('studentName','Informe seu nome completo.');valid=false;}
-    if(!validPhone(payload.aluno_whatsapp)){setError('studentPhone','Informe um WhatsApp válido com DDD.');valid=false;}
-    if(payload.amigo_nome.length<3){setError('friendName','Informe o nome completo do amigo.');valid=false;}
-    if(!validPhone(payload.amigo_whatsapp)){setError('friendPhone','Informe um WhatsApp válido com DDD.');valid=false;}
-    if(!payload.amigo_curso){setError('friendCourse','Selecione o curso de interesse.');valid=false;}
-    if(payload.aluno_whatsapp===payload.amigo_whatsapp){setError('friendPhone','Você não pode indicar seu próprio número.');valid=false;}
-    if(!payload.consentimento){setError('consent','É necessário confirmar a autorização do indicado.');valid=false;}
+    if(aluno.nome.length<3){setError('studentName','Informe seu nome completo.');valid=false;}
+    if(!validPhone(aluno.whatsapp)){setError('studentPhone','Informe um WhatsApp válido com DDD.');valid=false;}
+    if(friends.some(f=>f.whatsapp===aluno.whatsapp)){
+      setError('studentPhone','Seu WhatsApp não pode estar entre as pessoas indicadas.');valid=false;
+    }
+    if(!$('consent').checked){setError('consent','Confirme que todos os indicados autorizaram o contato.');valid=false;}
     if(!valid){$('referralForm').querySelector('.is-invalid')?.focus();return;}
-    $('submitBtn').disabled=true;$('submitText').textContent='Enviando indicação...';$('submitArrow').textContent='…';
-    try{const r=await request('criar',{indicacao:payload},'');$('referralForm').hidden=true;$('successView').hidden=false;$('successRef').textContent=r.id?`Protocolo: ${r.id.slice(0,8).toUpperCase()}`:'';$('successView').scrollIntoView({behavior:'smooth',block:'center'});}
-    catch(err){showError('submitError',err.message);}
-    finally{$('submitBtn').disabled=false;$('submitText').textContent='Enviar indicação';$('submitArrow').textContent='→';}
+    sending=true;
+    $('submitBtn').disabled=true;$('addFriendBtn').disabled=true;
+    $('submitText').textContent=`Enviando ${friends.length} indicações...`;
+    $('submitArrow').textContent='…';
+    renderFriends();
+    try{
+      const result=await request('criar_lote',{
+        aluno,amigos:friends,
+        consentimento:true,
+        origem:new URLSearchParams(location.search).get('origem')||'formulario'
+      },'');
+      const quantity=Number(result.quantidade);
+      if(!result.ok||quantity!==friends.length)throw new Error('O servidor não confirmou todas as indicações. Contate a escola antes de tentar novamente.');
+      $('celebrationName').textContent=aluno.nome.split(' ')[0];
+      $('celebrationMessage').textContent=`Você indicou ${quantity} ${quantity===1?'pessoa':'pessoas'} e recebemos todas as suas indicações!`;
+      launchConfetti();openModal('successModal');
+    }catch(err){showError('submitError',err.message);$('submitError').scrollIntoView({behavior:'smooth',block:'center'});}
+    finally{
+      sending=false;$('submitBtn').disabled=false;$('addFriendBtn').disabled=false;
+      $('submitText').textContent='Enviar indicação';$('submitArrow').textContent='→';
+      renderFriends();
+    }
   });
-  $('newReferralBtn').addEventListener('click',()=>{$('referralForm').reset();$('referralForm').hidden=false;$('successView').hidden=true;clearError('submitError');['studentName','studentPhone','friendName','friendPhone','friendCourse','consent','studentSocial','friendSocial'].forEach(id=>setError(id,''));$('studentName').focus();});
+  $('newReferralBtn').addEventListener('click',()=>{
+    closeModal('successModal');
+    $('referralForm').reset();friends.splice(0);renderFriends();
+    clearError('submitError');
+    ['studentName','studentPhone','friendName','friendPhone','consent','studentSocial'].forEach(id=>setError(id,''));
+    document.getElementById('formulario').scrollIntoView({behavior:'smooth',block:'start'});
+    $('studentName').focus({preventScroll:true});
+  });
   $('loginForm').addEventListener('submit',async e=>{
     e.preventDefault();clearError('loginError');
     const pin=$('adminPin').value;
