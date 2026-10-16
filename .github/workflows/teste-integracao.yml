@@ -102,13 +102,26 @@ jobs:
             $('exportMode').value='detalhado';
             $('exportXlsx').click();
             assert.equal(exported[1].wb['Por indicação'].rows.length,4);
+            const pdf=[];
+            w.jspdf={jsPDF:class {
+              constructor(){this.internal={getCurrentPageInfo:()=>({pageNumber:1})};}
+              setFillColor(){} rect(){} setTextColor(){} setFont(){} setFontSize(){} text(){}
+              autoTable(options){pdf.push({head:options.head,body:options.body});}
+              save(filename){pdf[pdf.length-1].filename=filename;}
+            }};
+            $('exportMode').value='simples';$('exportPdf').click();
+            assert.equal(pdf[0].body.length,2);
+            assert.match(pdf[0].filename,/Simples/);
+            $('exportMode').value='detalhado';$('exportPdf').click();
+            assert.equal(pdf[1].body.length,3);
+            assert.match(pdf[1].filename,/Detalhado/);
             console.log('Interface dinâmica, agrupamento, expandir, confirmações e Excel OK.');
             dom.window.close();
           }
           main().catch(e=>{console.error(e);process.exit(1)});
           NODE
           node _test-ui.cjs
-      - name: Testar backend com envios sucessivos
+      - name: Testar backend sem gerar registros persistentes
         env:
           FUNCTION_URL: https://tbswlevtdbqspnkdkeuj.supabase.co/functions/v1/indicacoes
           PUBLISHABLE_KEY: sb_publishable_osf-t3g5GwfhQc5RugsxjQ_89G8LuBl
@@ -126,12 +139,9 @@ jobs:
               except urllib.error.HTTPError as e: return e.code,json.load(e)
           code,data=call({'action':'saude'})
           assert code==200 and data.get('ok'),(code,data)
-          person={'nome':'Teste Incremental Treinacamp','whatsapp':'11900000199','rede_social':'@teste'}
-          base={'action':'criar_lote','aluno':person,'origem':'teste_incremental_ci','consentimento':True}
-          names=[{'nome':f'Pessoa Sintetica {i}','whatsapp':f'1190000050{i}'} for i in range(1,4)]
-          c1,result1=call({**base,'amigos':names[:1]})
-          assert c1==201 and result1.get('quantidade')==1 and result1.get('total_acumulado')==1,(c1,result1)
-          c2,result2=call({**base,'amigos':names[1:]})
-          assert c2==201 and result2.get('quantidade')==2 and result2.get('total_acumulado')==3,(c2,result2)
-          print('Lotes 1 + 2 recebidos, aluno com 3 indicações acumuladas e ainda não validado.')
+          # Teste negativo de validação: não grava dados em produção.
+          code,result=call({'action':'criar_lote','aluno':{'nome':'Teste de Validacao','whatsapp':'11900000199'},'amigos':[],'origem':'teste_nao_gravar','consentimento':True})
+          assert code==422 and 'amigo' in result.get('error','').lower(),(code,result)
+          print('Backend rejeita lista vazia, sem criar registros.')
+
           PY
