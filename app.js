@@ -244,7 +244,7 @@
       const date=document.createElement('td');date.textContent=fmtDate(r.criado_em);tr.appendChild(date);
       addPerson(tr,r.aluno_nome,r.aluno_whatsapp,r.aluno_rede_social);
       addPerson(tr,r.amigo_nome,r.amigo_whatsapp,r.amigo_rede_social);
-      const course=document.createElement('td');course.textContent=r.amigo_curso;tr.appendChild(course);
+      const course=document.createElement('td');course.textContent=({'qr':'QR Code','cartaz-qr':'QR Code','formulario':'Formulário'}[r.origem]||r.origem||'Formulário');tr.appendChild(course);
       const scell=document.createElement('td'),wrapper=document.createElement('span'),sel=document.createElement('select');wrapper.className=`badge-status status-${r.status}`;sel.className='status-select';sel.setAttribute('aria-label',`Status da indicação ${r.amigo_nome}`);
       Object.keys(statuses).forEach(key=>{const opt=document.createElement('option');opt.value=key;opt.textContent=statuses[key];sel.appendChild(opt)});sel.value=r.status;
       sel.addEventListener('change',async ()=>{const prev=r.status,next=sel.value;sel.disabled=true;try{await request('atualizar',{id:r.id,status:next});r.status=next;refreshTable();toast(`Status alterado para ${statuses[next]}.`);}catch(err){sel.value=prev;toast(err.message,true);}finally{sel.disabled=false;}});
@@ -256,16 +256,19 @@
   // Prefixos potencialmente interpretados como fórmulas pelo Excel não podem ser exportados como fórmulas.
   const safeCell = value => { const s=String(value??'');return /^[\s]*[=+\-@\t\r]/.test(s)?`'${s}`:s; };
   const exportData=()=>state.filtered.map(r=>[
-    fmtDate(r.criado_em),safeCell(r.aluno_nome),safeCell(formatPhone(r.aluno_whatsapp)),safeCell(r.aluno_curso),safeCell(r.amigo_nome),safeCell(formatPhone(r.amigo_whatsapp)),safeCell(r.amigo_curso),statuses[r.status]||r.status,
-    ['matriculado','pago'].includes(r.status)?BONUS:0,r.status==='pago'?'Sim':'Não',safeCell(r.origem||''),r.id,safeCell(r.aluno_rede_social||''),safeCell(r.amigo_rede_social||'')
+    fmtDate(r.criado_em),safeCell(r.aluno_nome),safeCell(formatPhone(r.aluno_whatsapp)),
+    safeCell(r.aluno_rede_social||''),safeCell(r.amigo_nome),
+    safeCell(formatPhone(r.amigo_whatsapp)),statuses[r.status]||r.status,
+    ['matriculado','pago'].includes(r.status)?BONUS:0,
+    r.status==='pago'?'Sim':'Não',safeCell(r.origem||''),r.id
   ]);
-  const columns=['Data','Aluno que indicou','WhatsApp do aluno','Curso do aluno','Amigo indicado','WhatsApp do amigo','Curso de interesse','Status','Bônus (R$)','Pago?','Origem','Identificador','Rede social de quem indicou','Rede social do amigo'];
+  const columns=['Data','Aluno que indicou','WhatsApp do aluno','Rede social do aluno','Amigo indicado','WhatsApp do amigo','Status','Bônus (R$)','Pago?','Origem','Identificador'];
   function makeFilename(ext){const now=new Date(),ds=[now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0')].join('-');return `Treinacamp_Indicacoes_${ds}.${ext}`;}
   $('exportXlsx').addEventListener('click',()=>{
     if(!window.XLSX){toast('Biblioteca Excel indisponível. Verifique sua conexão com a internet.',true);return;}
     const rows=exportData(),wb=XLSX.utils.book_new();
     const sheet=XLSX.utils.aoa_to_sheet([columns,...rows]);
-    sheet['!cols']=[{wch:20},{wch:30},{wch:20},{wch:24},{wch:30},{wch:20},{wch:24},{wch:16},{wch:14},{wch:10},{wch:18},{wch:39},{wch:32},{wch:32}];
+    sheet['!cols']=[{wch:20},{wch:30},{wch:20},{wch:30},{wch:30},{wch:20},{wch:16},{wch:14},{wch:10},{wch:20},{wch:39}];
     sheet['!autofilter']={ref:sheet['!ref']};sheet['!freeze']={xSplit:0,ySplit:1};
     XLSX.utils.book_append_sheet(wb,sheet,'Indicações');
     const summary=[['TREINACAMP • AMIGO DA ONÇA'],['RELATÓRIO DE INDICAÇÕES'],['Gerado em',fmtDate(new Date().toISOString())],['Filtro de status',$('statusFilter').selectedOptions[0]?.textContent||'Todos'],['Indicações exportadas',rows.length],['Matriculados (filtro)',state.filtered.filter(r=>['matriculado','pago'].includes(r.status)).length],['Bônus a pagar (filtro)',state.filtered.filter(r=>r.status==='matriculado').length*BONUS],['Bônus pagos (filtro)',state.filtered.filter(r=>r.status==='pago').length*BONUS]];
@@ -278,7 +281,7 @@
     doc.setFillColor(8,31,75);doc.rect(0,0,297,40,'F');doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(20);doc.text('TREINACAMP  |  Amigo da Onça',14,17);doc.setFont('helvetica','normal');doc.setFontSize(9);doc.text(`Relatório de indicações • ${fmtDate(new Date().toISOString())}`,14,26);
     doc.setTextColor(34,54,83);doc.setFont('helvetica','bold');doc.setFontSize(10);doc.text(`${rows.length} indicações  |  ${state.filtered.filter(r=>['pago','matriculado'].includes(r.status)).length} matrículas  |  ${money(state.filtered.filter(r=>r.status==='matriculado').length*BONUS)} a pagar`,14,49);
     if(typeof doc.autoTable==='function'){
-      doc.autoTable({startY:55,head:[['Data','Quem indicou','WhatsApp','Amigo indicado','WhatsApp','Curso','Status','Bônus']],body:rows.map(r=>[r[0],r[12]?r[1]+'\n'+r[12]:r[1],r[2],r[13]?r[4]+'\n'+r[13]:r[4],r[5],r[6],r[7],money(r[8])]),theme:'grid',styles:{font:'helvetica',fontSize:7,cellPadding:2.5,overflow:'linebreak',textColor:[39,55,80]},headStyles:{fillColor:[13,47,98],fontStyle:'bold',textColor:255},alternateRowStyles:{fillColor:[248,250,253]},margin:{top:15,left:13,right:13,bottom:16},columnStyles:{0:{cellWidth:25},1:{cellWidth:44},2:{cellWidth:29},3:{cellWidth:44},4:{cellWidth:29},5:{cellWidth:38},6:{cellWidth:32},7:{cellWidth:24}},didDrawPage:data=>{const n=doc.internal.getNumberOfPages();doc.setTextColor(124,136,153);doc.setFontSize(8);doc.text(`Treinacamp • Uso interno   |   Página ${n}`,14,202);}});
+      doc.autoTable({startY:55,head:[['Data','Aluno / Rede social','WhatsApp','Amigo indicado','WhatsApp','Status','Bônus']],body:rows.map(r=>[r[0],r[1]+(r[3]?'\n'+r[3]:''),r[2],r[4],r[5],r[6],money(r[7])]),theme:'grid',styles:{font:'helvetica',fontSize:7,cellPadding:2.5,overflow:'linebreak',textColor:[39,55,80]},headStyles:{fillColor:[13,47,98],fontStyle:'bold',textColor:255},alternateRowStyles:{fillColor:[248,250,253]},margin:{top:15,left:13,right:13,bottom:16},columnStyles:{0:{cellWidth:26},1:{cellWidth:57},2:{cellWidth:31},3:{cellWidth:58},4:{cellWidth:31},5:{cellWidth:37},6:{cellWidth:28}},didDrawPage:data=>{const n=doc.internal.getNumberOfPages();doc.setTextColor(124,136,153);doc.setFontSize(8);doc.text(`Treinacamp • Uso interno   |   Página ${n}`,14,202);}});
     } else {doc.setFontSize(12);doc.text('O módulo de tabelas não foi carregado. Recarregue a página.',14,68);}
     doc.save(makeFilename('pdf'));toast(`PDF gerado com ${rows.length} indicação(ões).`);
   });
