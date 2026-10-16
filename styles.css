@@ -236,3 +236,51 @@
  .delete-modal-actions{flex-direction:column}
  .delete-modal-actions .btn{width:100%;flex:auto}
 }
+
+
+/* Consulta pública de indicações: acesso discreto, popup responsivo e sem exposição de contatos */
+.consult-entry{
+  display:inline-flex;align-items:center;gap:10px;margin-top:18px;padding:11px 14px;
+  background:rgba(255,255,255,.065);border:1px solid rgba(230,240,255,.26);
+  border-radius:12px;color:#e7f0ff;cursor:pointer;
+  font:600 12px 'DM Sans',sans-serif;max-width:100%;text-align:left;
+  box-shadow:0 4px 16px rgba(0,10,35,.12);transition:background .2s,border-color .2s,transform .2s
+}
+.consult-entry:hover{background:rgba(255,255,255,.13);border-color:rgba(255,255,255,.55);transform:translateY(-1px)}
+.consult-entry strong{color:#ffcd56}
+.consult-entry:focus-visible{outline:3px solid #ffcd56;outline-offset:3px}
+.consult-entry-icon{display:grid;place-items:center;font-size:20px;line-height:1;width:28px;height:28px;flex:none;border-radius:8px;background:rgba(255,255,255,.15)}
+.consult-dialog{width:min(100%,470px);max-height:calc(100dvh - 28px);overflow-y:auto;padding:30px 30px 25px;border:1px solid #cedbef;box-shadow:0 28px 90px rgba(5,23,55,.27)}
+.consult-icon{display:grid;place-items:center;width:48px;height:48px;border-radius:13px;background:#eaf2ff;color:#104b9b;font-size:28px;margin-bottom:13px}
+.consult-dialog h2{font:800 26px/1.2 'Outfit',sans-serif;color:#0d2f63;margin:9px 0}
+.consult-dialog .consult-intro{margin:0 0 22px;color:#62758f;line-height:1.65;font-size:12px}
+.consult-dialog #consultForm .field{margin-bottom:12px}
+.consult-dialog #consultSubmit{margin-top:14px;min-height:50px}
+.consult-dialog #consultSubmit:disabled{cursor:wait;opacity:.75}
+.consult-result{background:linear-gradient(160deg,#eff6ff,#fff);border:1px solid #cddff3;
+  box-shadow:0 7px 24px rgba(12,62,124,.09);text-align:center;border-radius:15px;padding:18px 17px;margin:17px 0 0}
+.consult-result-label{display:block;font-size:10px;color:#39618e;letter-spacing:1px;font-weight:900}
+.consult-result-number{display:block;font:900 54px/1.1 'Outfit',sans-serif;color:#0b3f8a;margin:7px 0}
+.consult-result p{margin:0 auto 10px;font-size:12px;color:#476180;max-width:350px;line-height:1.65}
+.consult-progress{height:9px;border-radius:20px;background:#dfe9f4;overflow:hidden;max-width:300px;margin:13px auto 10px}
+.consult-progress>span{display:block;height:100%;width:0%;border-radius:20px;background:linear-gradient(90deg,#1955a6,#248be3);transition:width .35s}
+.consult-result.complete{background:linear-gradient(160deg,#effaf3,#fff);border-color:#a7ddbd}
+.consult-result.complete .consult-result-number{color:#127342}
+.consult-result.complete .consult-progress>span{background:linear-gradient(90deg,#15915e,#34be83)}
+.consult-result small{display:block;color:#61738c;line-height:1.5;font-size:11px}
+.consult-privacy-note{font-size:10px!important;color:#7c8aa0!important;line-height:1.65!important;
+  margin:15px 0 0!important;padding:11px 12px;border-radius:9px;background:#f4f7fb;
+  border:1px solid #e2eaf4}
+.consult-dialog .field input{font-size:15px}
+@media(max-width:760px){
+  .consult-entry{margin-top:17px;font-size:11px;line-height:1.5}
+  .consult-dialog{padding:26px 22px 22px}
+  .consult-dialog .field input{font-size:16px}
+}
+@media(max-width:480px){
+  .consult-entry{width:100%;justify-content:center;flex-wrap:wrap}
+  .consult-dialog{border-radius:18px;max-height:calc(100dvh - 20px);padding:22px 17px 20px}
+  .consult-dialog h2{font-size:23px;padding-right:12px}
+  .consult-result-number{font-size:46px}
+}
+@media(prefers-reduced-motion:reduce){.consult-entry,.consult-progress>span{transition:none!important}}
