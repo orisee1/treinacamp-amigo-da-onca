@@ -133,6 +133,34 @@ Deno.serve(async(req:Request):Promise<Response>=>{
       }
       return reply({ok:true,quantidade:data.quantidade,total_acumulado:data.total_acumulado,apto:data.apto,protocolo:data.protocolo},201,origin);
     }
+    if(action==='consultar_indicacoes'){
+      // Consulta pública: nunca devolve nomes, telefones ou registros individuais.
+      // Comparação literal do nome, respeitando maiúsculas, acentos e espaços internos.
+      const nome=typeof input.nome==='string'?input.nome.trim():'';
+      const whatsapp=digits(input.whatsapp);
+      if(nome.length<3||nome.length>120||!validPhone(whatsapp)){
+        return reply({error:'Informe seu nome completo e WhatsApp com DDD.'},422,origin);
+      }
+      const limiteIp=await useLimit(`consulta:ip:${ipHash}`,12,15);
+      if(!limiteIp.allowed){
+        return reply({error:'Limite de consultas atingido. Aguarde 15 minutos e tente novamente.'},429,origin);
+      }
+      const chaveNumero=await hash(whatsapp+':'+SERVICE_KEY.slice(-16));
+      const limiteNumero=await useLimit(`consulta:fone:${chaveNumero}`,6,15);
+      if(!limiteNumero.allowed){
+        return reply({error:'Muitas consultas para este número. Aguarde 15 minutos.'},429,origin);
+      }
+      const {count,error}=await db.from('indicacoes')
+        .select('id',{head:true,count:'exact'})
+        .eq('aluno_nome',nome)
+        .eq('aluno_whatsapp',whatsapp);
+      if(error)return reply({error:'Não foi possível realizar a consulta agora. Tente novamente.'},503,origin);
+      const quantidade=Number(count||0);
+      return reply({
+        ok:true,encontrado:quantidade>0,quantidade,
+        validado:quantidade>=10,faltam:Math.max(0,10-quantidade)
+      },200,origin);
+    }
     if(action==='login'){
       const rateKey=`login:${ipHash}`;
       const l=await useLimit(rateKey,5,15);
