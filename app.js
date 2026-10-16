@@ -5,7 +5,7 @@
   const BONUS = Number(config.BONUS_POR_MATRICULA) || 50;
   const $ = id => document.getElementById(id);
   const statuses = { pendente:'Pendente', matriculado:'Matriculado', pago:'Pago', cancelado:'Cancelado' };
-  const state = { entries: [], filtered: [], token: sessionStorage.getItem('tc_admin_token') || '', ready: true };
+  const state = { entries: [], filtered: [], token: sessionStorage.getItem('tc_admin_token') || '', ready: true, groups:[], visibleGroups:[], expanded:new Set() };
   const money = n => (Number(n) || 0).toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
   const onlyDigits = value => String(value ?? '').replace(/\D/g, '');
   const validPhone = value => /^(?:[1-9][1-9])\d{8,9}$/.test(onlyDigits(value));
@@ -79,14 +79,12 @@
 
   function renderFriends(){
     const n=friends.length,remaining=Math.max(0,10-n);
-    $('friendsCount').textContent=`${n} / 10`;
-    $('progressStatus').textContent=remaining?`Faltam ${remaining}`:'Pronto para enviar!';
-    $('progressStatus').classList.toggle('complete',!remaining);
+    $('friendsCount').textContent=n+' neste envio';
+    $('progressStatus').textContent=n>0?'Pode enviar':'Adicione um amigo';
+    $('progressStatus').classList.toggle('complete',n>0);
     $('friendsProgress').setAttribute('aria-valuenow',String(Math.min(n,10)));
     $('friendsProgressBar').style.width=`${Math.min(100,n*10)}%`;
-    $('friendsHint').textContent=remaining
-      ?`Faltam ${remaining} ${remaining===1?'amigo':'amigos'} para atingir o mínimo de 10 indicações.`
-      :`Você já adicionou ${n} ${n===1?'pessoa':'pessoas'} e pode enviar ou continuar adicionando.`;
+    $('friendsHint').textContent=n===0?'Adicione ao menos um contato. Envie quantas vezes quiser; a validação acontece ao somar 10 indicações.':n<10?'Você pode enviar estas '+n+' indicação(ões) agora. A participação será validada após totalizar 10 indicações acumuladas.':'Você já adicionou '+n+' pessoas neste envio. Pode enviar ou continuar indicando.';
     $('friendsEmpty').hidden=n>0;
     const grid=$('friendsGrid');grid.replaceChildren();
     friends.forEach((friend,index)=>{
@@ -128,7 +126,7 @@
     $('friendName').value='';$('friendPhone').value='';
     setError('friendName','');setError('friendPhone','');
     renderFriends();$('friendName').focus();
-    if(friends.length===10)toast('Você chegou às 10 indicações mínimas! Pode enviar ou continuar adicionando.');
+    if(friends.length===10)toast('Você adicionou 10 amigos neste envio! Os contatos enviados serão somados aos anteriores.');
   }
   $('addFriendBtn').addEventListener('click',addFriend);
   ['friendName','friendPhone'].forEach(id=>$(id).addEventListener('keydown',e=>{
@@ -153,10 +151,9 @@
   $('referralForm').addEventListener('submit',async e=>{
     e.preventDefault();if(sending)return;
     clearError('submitError');
-    // O mínimo de 10 deve ser comunicado mesmo se houver um rascunho incompleto.
-    if(friends.length<10){
+    if(friends.length<1){
       if($('friendName').value.trim()||$('friendPhone').value.trim())validateFriend();
-      showError('submitError',`É necessário cadastrar no mínimo 10 pessoas. Você adicionou ${friends.length}; faltam ${10-friends.length}.`);
+      showError('submitError','Adicione pelo menos uma pessoa pelo botão “Indicar amigo” antes de enviar.');
       $('submitError').scrollIntoView({behavior:'smooth',block:'center'});return;
     }
     // Um contato começado não deve ser descartado sem aviso.
@@ -172,7 +169,7 @@
       rede_social:$('studentSocial').value.trim()
     };
     let valid=true;
-    if(aluno.nome.length<3){setError('studentName','Informe seu nome completo.');valid=false;}
+    if(aluno.nome.split(' ').filter(Boolean).length<2){setError('studentName','Informe seu nome e sobrenome completos, sem abreviar.');valid=false;}
     if(!validPhone(aluno.whatsapp)){setError('studentPhone','Informe um WhatsApp válido com DDD.');valid=false;}
     if(friends.some(f=>f.whatsapp===aluno.whatsapp)){
       setError('studentPhone','Seu WhatsApp não pode estar entre as pessoas indicadas.');valid=false;
@@ -193,7 +190,8 @@
       const quantity=Number(result.quantidade);
       if(!result.ok||quantity!==friends.length)throw new Error('O servidor não confirmou todas as indicações. Contate a escola antes de tentar novamente.');
       $('celebrationName').textContent=aluno.nome.split(' ')[0];
-      $('celebrationMessage').textContent=`Você indicou ${quantity} ${quantity===1?'pessoa':'pessoas'} e recebemos todas as suas indicações!`;
+      const total=Number(result.total_acumulado||quantity);
+      $('celebrationMessage').textContent='Recebemos '+quantity+' nova(s) indicação(ões)! Você agora tem '+total+' indicação(ões) acumulada(s). '+(total>=10?'Sua participação atingiu as 10 necessárias para validação!':'Faltam '+(10-total)+' para validar sua participação.');
       launchConfetti();openModal('successModal');
     }catch(err){showError('submitError',err.message);$('submitError').scrollIntoView({behavior:'smooth',block:'center'});}
     finally{
@@ -204,11 +202,11 @@
   });
   $('newReferralBtn').addEventListener('click',()=>{
     closeModal('successModal');
-    $('referralForm').reset();friends.splice(0);renderFriends();
+    friends.splice(0);$('friendName').value='';$('friendPhone').value='';$('consent').checked=false;renderFriends();
     clearError('submitError');
     ['studentName','studentPhone','friendName','friendPhone','consent','studentSocial'].forEach(id=>setError(id,''));
     document.getElementById('formulario').scrollIntoView({behavior:'smooth',block:'start'});
-    $('studentName').focus({preventScroll:true});
+    $('friendName').focus({preventScroll:true});
   });
   $('loginForm').addEventListener('submit',async e=>{
     e.preventDefault();clearError('loginError');
@@ -228,7 +226,6 @@
   $('logoutBtn').addEventListener('click',()=>signOut());
   $('refreshBtn').addEventListener('click',()=>loadDashboard());
   $('overviewSide').addEventListener('click',()=>window.scrollTo({top:0,behavior:'smooth'}));
-  $('qrSide').addEventListener('click',()=>window.open(new URL('qr.html', location.href).href,'_blank','noopener,noreferrer'));
   $('searchInput').addEventListener('input',refreshTable);$('statusFilter').addEventListener('change',refreshTable);
   function refreshTable(){
     const all=state.entries,q=$('searchInput').value.toLocaleLowerCase('pt-BR').trim(),status=$('statusFilter').value;
