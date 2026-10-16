@@ -70,73 +70,102 @@ alter table public.indicacoes
 
 -- Toda lista é gravada ou rejeitada em uma única transação.
 -- Apenas a Edge Function (service_role) pode executar esta função.
-create or replace function public.criar_indicacoes_em_lote(
-  p_aluno_nome text,
-  p_aluno_whatsapp text,
-  p_aluno_rede_social text,
-  p_amigos jsonb,
-  p_origem text,
-  p_consentimento boolean
-) returns jsonb
-language plpgsql
-security definer
-set search_path = public, pg_temp
-as $
-declare
-  quantidade int;
-  inseridos int;
-  primeiro_id text;
+CREATE OR REPLACE FUNCTION public.criar_indicacoes_em_lote(p_aluno_nome text, p_aluno_whatsapp text, p_aluno_rede_social text, p_amigos jsonb, p_origem text, p_consentimento boolean)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare quantidade int; inseridos int; primeiro_id text; total_indicados int;
 begin
-  if p_consentimento is distinct from true then
-    raise exception 'Autorização para contato obrigatória';
-  end if;
-  if jsonb_typeof(p_amigos) is distinct from 'array' then
-    raise exception 'A lista de pessoas indicadas é inválida';
-  end if;
-  quantidade := jsonb_array_length(p_amigos);
-  if quantidade < 10 then
-    raise exception 'É necessário indicar no mínimo 10 pessoas';
-  end if;
-  if length(btrim(coalesce(p_aluno_nome,''))) < 3
-     or length(p_aluno_nome) > 120
-     or coalesce(p_aluno_whatsapp,'') !~ '^[1-9][1-9][0-9]{8,9}
-     or length(coalesce(p_aluno_rede_social,'')) > 120 then
+ if p_consentimento is distinct from true then raise exception 'Autorização para contato obrigatória'; end if;
+ if jsonb_typeof(p_amigos) is distinct from 'array' then raise exception 'Lista de indicados inválida'; end if;
+ quantidade:=jsonb_array_length(p_amigos);
+ if quantidade < 1 then raise exception 'Adicione pelo menos um amigo'; end if;
+ if length(btrim(coalesce(p_aluno_nome,'')))<3
+    or length(p_aluno_nome)>120
+    or coalesce(p_aluno_whatsapp,'') !~ '^[1-9][1-9][0-9]{8,9}$'
+    or length(coalesce(p_aluno_rede_social,''))>120 then
     raise exception 'Dados do aluno incompletos ou inválidos';
-  end if;
-  if exists (
-    select 1 from jsonb_array_elements(p_amigos) item
+ end if;
+ if exists (select 1 from jsonb_array_elements(p_amigos) item
     where jsonb_typeof(item) is distinct from 'object'
-      or length(btrim(coalesce(item->>'nome',''))) < 3
-      or length(coalesce(item->>'nome','')) > 120
-      or coalesce(item->>'whatsapp','') !~ '^[1-9][1-9][0-9]{8,9}
-      or item->>'whatsapp' = p_aluno_whatsapp
-  ) then
-    raise exception 'Revise o nome e o WhatsApp das pessoas indicadas';
-  end if;
-  if (select count(distinct item->>'whatsapp')
-      from jsonb_array_elements(p_amigos) item) <> quantidade then
-    raise exception 'O mesmo WhatsApp não pode aparecer duas vezes na lista';
-  end if;
+      or length(btrim(coalesce(item->>'nome','')))<3
+      or length(coalesce(item->>'nome',''))>120
+      or coalesce(item->>'whatsapp','') !~ '^[1-9][1-9][0-9]{8,9}$'
+      or item->>'whatsapp'=p_aluno_whatsapp) then
+    raise exception 'Confira nome e telefone dos amigos';
+ end if;
+ if (select count(distinct item->>'whatsapp') from jsonb_array_elements(p_amigos) item)<>quantidade then
+    raise exception 'Não repita o WhatsApp na mesma lista';
+ end if;
+ with novos as (
+   insert into public.indicacoes (
+     aluno_nome,aluno_whatsapp,aluno_rede_social,amigo_nome,amigo_whatsapp,
+     amigo_curso,origem,consentimento_confirmado)
+   select btrim(regexp_replace(p_aluno_nome,'\s+',' ','g')),p_aluno_whatsapp,
+     nullif(btrim(coalesce(p_aluno_rede_social,'')),''),
+     btrim(regexp_replace(item->>'nome','\s+',' ','g')),
+     item->>'whatsapp','Não informado',
+     left(coalesce(nullif(btrim(p_origem),''),'formulario'),40),true
+   from jsonb_array_elements(p_amigos) item
+   returning id
+ )
+ select count(*),min(id::text) into inseridos,primeiro_id from novos;
 
-  with novas as (
-    insert into public.indicacoes (
-      aluno_nome, aluno_whatsapp, aluno_rede_social,
-      amigo_nome, amigo_whatsapp, amigo_curso,
-      origem, consentimento_confirmado
-    )
-    select btrim(p_aluno_nome),p_aluno_whatsapp,
-      nullif(btrim(coalesce(p_aluno_rede_social,'')), ''),
-      btrim(item->>'nome'),item->>'whatsapp','Não informado',
-      left(coalesce(nullif(btrim(p_origem),''),'formulario'),40),true
-    from jsonb_array_elements(p_amigos) item
-    returning id
-  )
-  select count(*),min(id::text) into inseridos,primeiro_id from novas;
-  return jsonb_build_object('ok',true,'quantidade',inseridos,'protocolo',left(primeiro_id,8));
+ select count(*) into total_indicados from public.indicacoes
+ where aluno_whatsapp=p_aluno_whatsapp
+   and lower(regexp_replace(btrim(aluno_nome),'\s+',' ','g')) =
+       lower(regexp_replace(btrim(p_aluno_nome),'\s+',' ','g'));
+ return jsonb_build_object('ok',true,'quantidade',inseridos,
+     'total_acumulado',total_indicados,'apto',total_indicados>=10,
+     'protocolo',left(primeiro_id,8));
 end;
-$;
+$function$
+
 revoke all on function public.criar_indicacoes_em_lote(text,text,text,jsonb,text,boolean)
   from public, anon, authenticated;
 grant execute on function public.criar_indicacoes_em_lote(text,text,text,jsonb,text,boolean)
   to service_role;
 comment on table public.indicacoes is 'Campanha Amigo da Onça: acesso exclusivo ao backend, mínimo de 10 por lote';
+
+-- Operações restritas à Edge Function autenticada como service_role.
+CREATE OR REPLACE FUNCTION public.excluir_indicacoes_do_aluno(p_aluno_nome text, p_aluno_whatsapp text)
+ RETURNS integer
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare apagadas integer;
+begin
+ if p_aluno_nome is null or length(btrim(p_aluno_nome))<3
+   or coalesce(p_aluno_whatsapp,'') !~ '^[1-9][1-9][0-9]{8,9}$' then
+   raise exception 'Identificação do aluno inválida';
+ end if;
+ with removed as (
+   delete from public.indicacoes
+   where aluno_whatsapp=p_aluno_whatsapp
+   and lower(regexp_replace(btrim(aluno_nome),'\s+',' ','g'))=
+       lower(regexp_replace(btrim(p_aluno_nome),'\s+',' ','g'))
+   returning id
+ ) select count(*) into apagadas from removed;
+ return apagadas;
+end;
+$function$
+
+revoke all on function public.excluir_indicacoes_do_aluno(text,text) from public,anon,authenticated;
+grant execute on function public.excluir_indicacoes_do_aluno(text,text) to service_role;
+CREATE OR REPLACE FUNCTION public.total_indicacoes_aluno(p_nome text, p_whatsapp text)
+ RETURNS integer
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+select count(*)::integer from public.indicacoes
+where aluno_whatsapp=p_whatsapp
+and lower(regexp_replace(btrim(aluno_nome),'\s+',' ','g'))=
+    lower(regexp_replace(btrim(p_nome),'\s+',' ','g'));
+$function$
+
+revoke all on function public.total_indicacoes_aluno(text,text) from public,anon,authenticated;
+grant execute on function public.total_indicacoes_aluno(text,text) to service_role;
