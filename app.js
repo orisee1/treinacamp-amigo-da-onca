@@ -153,16 +153,18 @@
   $('referralForm').addEventListener('submit',async e=>{
     e.preventDefault();if(sending)return;
     clearError('submitError');
-    // Um contato começado não deve ser perdido silenciosamente ao enviar a lista.
+    // O mínimo de 10 deve ser comunicado mesmo se houver um rascunho incompleto.
+    if(friends.length<10){
+      if($('friendName').value.trim()||$('friendPhone').value.trim())validateFriend();
+      showError('submitError',`É necessário cadastrar no mínimo 10 pessoas. Você adicionou ${friends.length}; faltam ${10-friends.length}.`);
+      $('submitError').scrollIntoView({behavior:'smooth',block:'center'});return;
+    }
+    // Um contato começado não deve ser descartado sem aviso.
     if($('friendName').value.trim()||$('friendPhone').value.trim()){
       const entry=validateFriend();
       if(entry)showError('submitError','Você começou outra indicação. Clique em "Indicar amigo" para incluí-la na lista antes do envio.');
       else showError('submitError','Complete o nome e o WhatsApp da indicação que está preenchendo.');
       return;
-    }
-    if(friends.length<10){
-      showError('submitError',`É necessário cadastrar no mínimo 10 pessoas. Você adicionou ${friends.length}; faltam ${10-friends.length}.`);
-      $('submitError').scrollIntoView({behavior:'smooth',block:'center'});return;
     }
     const aluno={
       nome:$('studentName').value.trim().replace(/\s+/g,' '),
