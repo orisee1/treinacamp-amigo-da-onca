@@ -9,7 +9,9 @@ create table if not exists public.indicacoes (
   criado_em timestamptz not null default now(),
   aluno_nome varchar(120) not null check(length(trim(aluno_nome)) >= 3),
   aluno_whatsapp varchar(11) not null check(aluno_whatsapp ~ '^[1-9][1-9][0-9]{8,9}$'),
-  aluno_curso varchar(100),
+  aluno_curso varchar(100), -- histórico de versões anteriores
+  aluno_rede_social varchar(120),
+  amigo_rede_social varchar(120), -- histórico de versões anteriores
   amigo_nome varchar(120) not null check(length(trim(amigo_nome)) >= 3),
   amigo_whatsapp varchar(11) not null check(amigo_whatsapp ~ '^[1-9][1-9][0-9]{8,9}$'),
   amigo_curso varchar(100) not null check(length(trim(amigo_curso)) >= 2),
@@ -28,20 +30,9 @@ create index if not exists idx_indicacoes_aluno_whatsapp on public.indicacoes(al
 create index if not exists idx_indicacoes_criado_em on public.indicacoes(criado_em desc);
 create index if not exists idx_indicacoes_status on public.indicacoes(status);
 
-create or replace function public.limitar_indicacoes()
-returns trigger language plpgsql set search_path = public as $$
-begin
-  -- Lock lógico atômico: duas requisições simultâneas do mesmo aluno não furam o limite.
-  perform pg_advisory_xact_lock(hashtextextended(new.aluno_whatsapp, 0));
-  if (select count(*) from public.indicacoes where aluno_whatsapp = new.aluno_whatsapp) >= 10 then
-    raise exception 'limite_de_dez_indicacoes';
-  end if;
-  return new;
-end;
-$$;
+-- A campanha é ilimitada: não pode existir o gatilho antigo com máximo de 10.
 drop trigger if exists trg_limitar_indicacoes on public.indicacoes;
-create trigger trg_limitar_indicacoes before insert on public.indicacoes
-  for each row execute function public.limitar_indicacoes();
+drop function if exists public.limitar_indicacoes();
 
 -- Limites de tentativas para proteger o login e evitar abuso do formulário.
 create table if not exists public.limites_api (
@@ -67,6 +58,85 @@ alter table public.admin_config enable row level security;
 revoke all on public.indicacoes from anon, authenticated;
 revoke all on public.limites_api from anon, authenticated;
 revoke all on public.admin_config from anon, authenticated;
-revoke all on function public.limitar_indicacoes() from public, anon, authenticated;
+grant usage on schema public to service_role;
+grant select, insert, update on public.indicacoes to service_role;
+grant select, insert, update, delete on public.limites_api to service_role;
+grant select on public.admin_config to service_role;
 
-comment on table public.indicacoes is 'Campanha Amigo da Onça: dados pessoais com acesso exclusivo pelo backend';
+-- Atualizações necessárias caso este schema seja reaplicado a um projeto legado.
+alter table public.indicacoes
+  add column if not exists aluno_rede_social varchar(120),
+  add column if not exists amigo_rede_social varchar(120);
+
+-- Toda lista é gravada ou rejeitada em uma única transação.
+-- Apenas a Edge Function (service_role) pode executar esta função.
+create or replace function public.criar_indicacoes_em_lote(
+  p_aluno_nome text,
+  p_aluno_whatsapp text,
+  p_aluno_rede_social text,
+  p_amigos jsonb,
+  p_origem text,
+  p_consentimento boolean
+) returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $
+declare
+  quantidade int;
+  inseridos int;
+  primeiro_id text;
+begin
+  if p_consentimento is distinct from true then
+    raise exception 'Autorização para contato obrigatória';
+  end if;
+  if jsonb_typeof(p_amigos) is distinct from 'array' then
+    raise exception 'A lista de pessoas indicadas é inválida';
+  end if;
+  quantidade := jsonb_array_length(p_amigos);
+  if quantidade < 10 then
+    raise exception 'É necessário indicar no mínimo 10 pessoas';
+  end if;
+  if length(btrim(coalesce(p_aluno_nome,''))) < 3
+     or length(p_aluno_nome) > 120
+     or coalesce(p_aluno_whatsapp,'') !~ '^[1-9][1-9][0-9]{8,9}
+     or length(coalesce(p_aluno_rede_social,'')) > 120 then
+    raise exception 'Dados do aluno incompletos ou inválidos';
+  end if;
+  if exists (
+    select 1 from jsonb_array_elements(p_amigos) item
+    where jsonb_typeof(item) is distinct from 'object'
+      or length(btrim(coalesce(item->>'nome',''))) < 3
+      or length(coalesce(item->>'nome','')) > 120
+      or coalesce(item->>'whatsapp','') !~ '^[1-9][1-9][0-9]{8,9}
+      or item->>'whatsapp' = p_aluno_whatsapp
+  ) then
+    raise exception 'Revise o nome e o WhatsApp das pessoas indicadas';
+  end if;
+  if (select count(distinct item->>'whatsapp')
+      from jsonb_array_elements(p_amigos) item) <> quantidade then
+    raise exception 'O mesmo WhatsApp não pode aparecer duas vezes na lista';
+  end if;
+
+  with novas as (
+    insert into public.indicacoes (
+      aluno_nome, aluno_whatsapp, aluno_rede_social,
+      amigo_nome, amigo_whatsapp, amigo_curso,
+      origem, consentimento_confirmado
+    )
+    select btrim(p_aluno_nome),p_aluno_whatsapp,
+      nullif(btrim(coalesce(p_aluno_rede_social,'')), ''),
+      btrim(item->>'nome'),item->>'whatsapp','Não informado',
+      left(coalesce(nullif(btrim(p_origem),''),'formulario'),40),true
+    from jsonb_array_elements(p_amigos) item
+    returning id
+  )
+  select count(*),min(id::text) into inseridos,primeiro_id from novas;
+  return jsonb_build_object('ok',true,'quantidade',inseridos,'protocolo',left(primeiro_id,8));
+end;
+$;
+revoke all on function public.criar_indicacoes_em_lote(text,text,text,jsonb,text,boolean)
+  from public, anon, authenticated;
+grant execute on function public.criar_indicacoes_em_lote(text,text,text,jsonb,text,boolean)
+  to service_role;
+comment on table public.indicacoes is 'Campanha Amigo da Onça: acesso exclusivo ao backend, mínimo de 10 por lote';
