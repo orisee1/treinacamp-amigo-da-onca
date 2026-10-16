@@ -96,8 +96,8 @@ Deno.serve(async(req:Request):Promise<Response>=>{
       const amigos=input.amigos;
       if(!aluno||typeof aluno!=='object'||!Array.isArray(amigos))
         return reply({error:'Dados ou lista de indicados ausentes'},400,origin);
-      if(amigos.length<10)
-        return reply({error:'Adicione pelo menos 10 amigos antes de enviar suas indicações.'},422,origin);
+      if(amigos.length<1)
+        return reply({error:'Adicione pelo menos um amigo antes de enviar.'},422,origin);
       const nome=text(aluno.nome,120),whatsapp=digits(aluno.whatsapp),social=text(aluno.rede_social,120);
       if(nome.length<3||!validPhone(whatsapp)||input.consentimento!==true)
         return reply({error:'Preencha seus dados e confirme a autorização dos amigos.'},422,origin);
@@ -131,7 +131,7 @@ Deno.serve(async(req:Request):Promise<Response>=>{
         if(error.code==='23505')return reply({error:'Um dos WhatsApps já foi indicado anteriormente. Confira a lista com a escola. Nenhuma indicação deste envio foi registrada.'},409,origin);
         return reply({error:'Não foi possível registrar toda a lista. Nenhuma indicação deste envio foi salva. Verifique os dados e tente novamente.'},500,origin);
       }
-      return reply({ok:true,quantidade:data.quantidade,protocolo:data.protocolo},201,origin);
+      return reply({ok:true,quantidade:data.quantidade,total_acumulado:data.total_acumulado,apto:data.apto,protocolo:data.protocolo},201,origin);
     }
     if(action==='login'){
       const rateKey=`login:${ipHash}`;
@@ -166,12 +166,34 @@ Deno.serve(async(req:Request):Promise<Response>=>{
       if(oldError||!old)return reply({error:'Indicação não encontrada'},404,origin);
       const now=new Date().toISOString();
       const changes:Record<string,unknown>={status,atualizado_em:now};
+      if(status==='pago'){
+        const {data:owner,error:ownerError}=await db.from('indicacoes').select('aluno_nome,aluno_whatsapp').eq('id',id).single();
+        if(ownerError||!owner)return reply({error:'Não foi possível conferir o participante.'},500,origin);
+        const {data:count,error:countError}=await db.rpc('total_indicacoes_aluno',{p_nome:owner.aluno_nome,p_whatsapp:owner.aluno_whatsapp});
+        if(countError)return reply({error:'Não foi possível validar a quantidade de indicações.'},500,origin);
+        if(Number(count)<10)return reply({error:'Pagamento bloqueado: o participante precisa completar 10 indicações para validar a campanha.'},409,origin);
+      }
       if(['matriculado','pago'].includes(status)&&!old.matriculado_em)changes.matriculado_em=now;
       if(status==='pago')changes.pago_em=now;
       if(status!=='pago')changes.pago_em=null;
       const {error}=await db.from('indicacoes').update(changes).eq('id',id);
       if(error)throw error;
       return reply({ok:true},200,origin);
+    }
+    if(action==='excluir_indicacao'){
+      const id=String(input.id||'');
+      if(!/^[0-9a-f-]{36}$/i.test(id))return reply({error:'Identificador inválido'},422,origin);
+      const {data,error}=await db.from('indicacoes').delete().eq('id',id).select('id');
+      if(error)return reply({error:'Não foi possível excluir esta indicação.'},500,origin);
+      if(!data?.length)return reply({error:'Indicação não encontrada.'},404,origin);
+      return reply({ok:true,excluidas:data.length},200,origin);
+    }
+    if(action==='excluir_aluno'){
+      const nome=text(input.nome,120),whatsapp=digits(input.whatsapp);
+      if(nome.length<3||!validPhone(whatsapp))return reply({error:'Dados do aluno inválidos'},422,origin);
+      const {data,error}=await db.rpc('excluir_indicacoes_do_aluno',{p_aluno_nome:nome,p_aluno_whatsapp:whatsapp});
+      if(error)return reply({error:'Não foi possível excluir as indicações deste aluno.'},500,origin);
+      return reply({ok:true,excluidas:Number(data||0)},200,origin);
     }
     return reply({error:'Ação desconhecida'},404,origin);
   }catch{
