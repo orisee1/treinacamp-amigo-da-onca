@@ -41,6 +41,7 @@
   }
   bindPhone('studentPhone');
   bindPhone('friendPhone');
+  bindPhone('consultPhone');
   ['studentName','friendName','studentSocial'].forEach(id=>$(id)?.addEventListener('input',()=>setError(id,'')));
   $('consent').addEventListener('change',()=>setError('consent',''));
   const friends=[];
@@ -62,10 +63,84 @@
   document.querySelectorAll('[data-close]').forEach(el=>el.addEventListener('click',()=>{
     closeModal(el.dataset.close==='login'?'loginModal':'privacyModal');
   }));
+
+  let consulting=false;
+  function resetConsult(){
+    $('consultForm').reset();
+    $('consultResult').hidden=true;
+    clearError('consultError');
+    setError('consultName','');
+    setError('consultPhone','');
+  }
+  function openConsult(){
+    resetConsult();
+    openModal('consultModal');
+    $('consultName').focus();
+  }
+  function closeConsult(){
+    if(consulting)return;
+    closeModal('consultModal');
+    $('openConsult').focus();
+  }
+  $('openConsult').addEventListener('click',openConsult);
+  $('closeConsult').addEventListener('click',closeConsult);
+  $('consultBackdrop').addEventListener('click',closeConsult);
+  ['consultName','consultPhone'].forEach(id=>$(id).addEventListener('input',()=>{
+    setError(id,'');
+    $('consultResult').hidden=true;
+    clearError('consultError');
+  }));
+  $('consultForm').addEventListener('submit',async e=>{
+    e.preventDefault();
+    if(consulting)return;
+    clearError('consultError');
+    $('consultResult').hidden=true;
+    // Não normalizar caixa, acentuação ou espaços internos: o nome deve ser exatamente igual ao cadastro.
+    const nome=$('consultName').value.trim();
+    const whatsapp=onlyDigits($('consultPhone').value);
+    let valid=true;
+    if(nome.length<3){setError('consultName','Informe o nome completo usado no cadastro.');valid=false;}
+    if(!validPhone(whatsapp)){setError('consultPhone','Informe o WhatsApp com DDD utilizado no cadastro.');valid=false;}
+    if(!valid){$('consultForm').querySelector('.is-invalid')?.focus();return;}
+    consulting=true;
+    $('consultSubmit').disabled=true;
+    $('consultSubmitText').textContent='Consultando...';
+    try{
+      const result=await request('consultar_indicacoes',{nome,whatsapp},'');
+      if(!result.ok)throw new Error('Não foi possível confirmar a consulta.');
+      if(!result.encontrado){
+        showError('consultError','Cadastro não localizado. Confira se o nome está exatamente igual ao informado no cadastro (inclusive acentos, letras maiúsculas e espaços) e se o WhatsApp é o mesmo.');
+        return;
+      }
+      const count=Number(result.quantidade);
+      if(!Number.isInteger(count)||count<0)throw new Error('O servidor retornou um total inválido.');
+      $('consultCount').textContent=count.toLocaleString('pt-BR');
+      $('consultResultLabel').textContent=count===1?'INDICAÇÃO CADASTRADA':'INDICAÇÕES CADASTRADAS';
+      const faltam=Math.max(0,10-count);
+      $('consultResultMessage').textContent=count>=10
+        ?'Você já completou o mínimo de 10 indicações acumuladas para validar sua participação!'
+        :'Você tem '+count+(count===1?' amigo indicado.':' amigos indicados.')+' Continue cadastrando para atingir 10.';
+      $('consultProgress').setAttribute('aria-valuenow',String(Math.min(count,10)));
+      $('consultProgressBar').style.width=Math.min(count*10,100)+'%';
+      $('consultStatus').textContent=count>=10
+        ?'Meta de indicações atingida. O prêmio de R$ 50 depende da matrícula de cada amigo e das regras da campanha.'
+        :'Faltam '+faltam+(faltam===1?' indicação':' indicações')+' para validar sua participação na campanha.';
+      $('consultResult').classList.toggle('complete',count>=10);
+      $('consultResult').hidden=false;
+    }catch(err){
+      showError('consultError',err.message);
+    }finally{
+      consulting=false;
+      $('consultSubmit').disabled=false;
+      $('consultSubmitText').textContent='Consultar minhas indicações';
+    }
+  });
+
   document.addEventListener('keydown',e=>{
     if(e.key==='Escape'){
       closeModal('loginModal');
       closeModal('privacyModal');
+      if(!$('consultModal').hidden)closeConsult();
     }
     if(e.altKey&&e.shiftKey&&e.key.toLowerCase()==='e'){
       e.preventDefault();
