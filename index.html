@@ -34,6 +34,7 @@
             <p class="hero-description">Indique quem você gosta para estudar na Treinacamp. Se seu amigo se matricular, <strong>você ganha R$ 50.</strong> Simples assim.</p>
             <div class="hero-actions"><a class="btn btn-primary" href="#formulario">Quero indicar um amigo <span aria-hidden="true">↗</span></a><a class="ghost-link" href="#como-funciona">Entenda a campanha <span aria-hidden="true">↓</span></a></div>
             <div class="hero-proof"><div class="proof-icon" aria-hidden="true">✦</div><div><strong>R$ 50 por matrícula</strong><span>Envie agora • validadas ao completar 10 no total</span></div></div>
+            <button id="openConsult" type="button" class="consult-entry"><span class="consult-entry-icon" aria-hidden="true">⌕</span><span>Já indicou amigos? <strong>Consultar minhas indicações</strong></span><span aria-hidden="true">↗</span></button>
           </div>
           <div class="hero-visual">
             <div class="visual-frame"><img src="assets/campanha-amigo-da-onca.jpeg" alt="Campanha Amigo da Onça da Treinacamp: indique e ganhe R$ 50 por amigo matriculado" loading="eager" /><div class="visual-gloss"></div></div>
@@ -87,6 +88,31 @@
       <section class="end-cta container"><span>💙</span><div><h2>Indicação boa é aquela que muda vidas.</h2><p>Ajude alguém a começar e participe da campanha.</p></div><a href="#formulario" class="btn btn-light">Indicar agora ↗</a></section>
     </main>
     <footer><div class="container footer-inner"><div class="footer-brand"><img class="footer-logo" src="assets/logo-treinacamp-horizontal.webp" alt="Treinacamp Cursos Profissionalizantes" width="204" height="78" /></div><p>© <span id="year"></span> Treinacamp. Todos os direitos reservados.</p><button id="privacyFooter" type="button">Privacidade e uso dos dados</button></div></footer>
+  </div>
+
+  <div class="modal-layer" id="consultModal" hidden>
+    <div class="modal-backdrop" id="consultBackdrop"></div>
+    <div class="modal-card consult-dialog" role="dialog" aria-modal="true" aria-labelledby="consultTitle" aria-describedby="consultIntro">
+      <button class="modal-close" id="closeConsult" type="button" aria-label="Fechar consulta">✕</button>
+      <div class="consult-icon" aria-hidden="true">⌕</div>
+      <span class="form-tag">CONSULTA DE INDICAÇÕES</span>
+      <h2 id="consultTitle">Quantos amigos já indiquei?</h2>
+      <p id="consultIntro" class="consult-intro">Informe exatamente o mesmo nome completo e WhatsApp que você utilizou no cadastro.</p>
+      <form id="consultForm" novalidate>
+        <div class="field"><label for="consultName">Seu nome completo <span>*</span></label><input id="consultName" name="consultName" type="text" autocomplete="name" maxlength="120" placeholder="Nome completo, exatamente como foi cadastrado" required /><small class="field-error" id="err-consultName"></small></div>
+        <div class="field"><label for="consultPhone">Seu WhatsApp com DDD <span>*</span></label><input id="consultPhone" name="consultPhone" type="tel" autocomplete="tel" inputmode="tel" maxlength="16" placeholder="(67) 99999-9999" required /><small class="field-error" id="err-consultPhone"></small></div>
+        <div id="consultError" class="form-error" role="alert" hidden></div>
+        <button id="consultSubmit" class="btn btn-submit" type="submit"><span id="consultSubmitText">Consultar minhas indicações</span><span aria-hidden="true">→</span></button>
+      </form>
+      <div id="consultResult" class="consult-result" role="status" aria-live="polite" hidden>
+        <span id="consultResultLabel" class="consult-result-label">TOTAL CADASTRADO</span>
+        <strong id="consultCount" class="consult-result-number">0</strong>
+        <p id="consultResultMessage"></p>
+        <div class="consult-progress" id="consultProgress" role="progressbar" aria-label="Progresso para validação da campanha" aria-valuemin="0" aria-valuemax="10" aria-valuenow="0"><span id="consultProgressBar"></span></div>
+        <small id="consultStatus"></small>
+      </div>
+      <p class="consult-privacy-note">Por privacidade, a consulta mostra apenas a quantidade de indicações. Não exibe os dados dos amigos cadastrados.</p>
+    </div>
   </div>
 
   <div class="modal-layer" id="privacyModal" hidden><div class="modal-backdrop" data-close="privacy"></div><div class="modal-card privacy-dialog" role="dialog" aria-modal="true" aria-labelledby="privacyTitle"><button class="modal-close" id="closePrivacy" aria-label="Fechar">✕</button><span class="form-tag">AVISO DE PRIVACIDADE</span><h2 id="privacyTitle">Seus dados são importantes.</h2><p>Para registrar as indicações, coletamos nome, WhatsApp e rede social opcional do aluno que indica, além do nome e WhatsApp de cada pessoa indicada.</p><p>Utilizamos esses dados exclusivamente para gerir a campanha, falar sobre cursos, verificar matrículas e apurar eventuais premiações. A campanha exige dez indicações acumuladas para validação, mas aceita envios menores e posteriores. O acesso aos registros fica restrito à equipe autorizada.</p><p>Peça autorização do amigo antes de informar seus dados. Para solicitar acesso, correção ou exclusão de informações, procure a administração da unidade Treinacamp responsável pela campanha.</p><button class="btn btn-primary" id="agreePrivacy">Entendi</button></div></div>
