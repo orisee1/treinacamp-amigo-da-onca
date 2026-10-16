@@ -227,62 +227,258 @@
   $('refreshBtn').addEventListener('click',()=>loadDashboard());
   $('overviewSide').addEventListener('click',()=>window.scrollTo({top:0,behavior:'smooth'}));
   $('searchInput').addEventListener('input',refreshTable);$('statusFilter').addEventListener('change',refreshTable);
+
+  const nameKey=name=>String(name||'').trim().replace(/\s+/g,' ').toLocaleLowerCase('pt-BR');
+  const studentKey=row=>nameKey(row.aluno_nome)+'|'+onlyDigits(row.aluno_whatsapp);
+  const escapeReport=value=>{const text=String(value??'');return /^[\s]*[=+\-@\t\r]/.test(text)?"'"+text:text;};
+  const groupData=()=>{
+    const map=new Map();
+    state.entries.forEach(row=>{
+      const key=studentKey(row);
+      if(!map.has(key))map.set(key,{key,nome:row.aluno_nome,whatsapp:onlyDigits(row.aluno_whatsapp),social:row.aluno_rede_social||'',items:[]});
+      const g=map.get(key);
+      if(!g.social&&row.aluno_rede_social)g.social=row.aluno_rede_social;
+      g.items.push(row);
+    });
+    return [...map.values()];
+  };
+  const isEligible=g=>g.items.length>=10;
+  const enrolledCount=g=>g.items.filter(r=>r.status==='matriculado'||r.status==='pago').length;
+  const owedCount=g=>isEligible(g)?g.items.filter(r=>r.status==='matriculado').length:0;
+  const paidCount=g=>g.items.filter(r=>r.status==='pago').length;
+  const participantStatus=g=>isEligible(g)?'Validado':'Faltam '+(10-g.items.length);
+  function cell(textValue,className){
+    const td=document.createElement('td');td.textContent=String(textValue??'');
+    if(className)td.className=className;
+    return td;
+  }
+  function button(label,className,handler){
+    const b=document.createElement('button');b.type='button';b.textContent=label;
+    b.className=className;b.addEventListener('click',handler);return b;
+  }
+  let deletionRequest=null;
+  function askDeletion(kind,group,friend){
+    const isSingle=kind==='indicacao';
+    const description=isSingle
+      ?'Excluir somente a indicação de '+friend.amigo_nome+' ('+formatPhone(friend.amigo_whatsapp)+')? O total de '+group.nome+' será recalculado e a exclusão não poderá ser desfeita.'
+      :'Excluir '+group.nome+' e TODAS as suas '+group.items.length+' indicações? Os nomes, telefones e registros de matrícula e pagamento vinculados serão apagados definitivamente.';
+    deletionRequest=isSingle?{kind,id:friend.id,key:group.key}:{kind,nome:group.nome,whatsapp:group.whatsapp,key:group.key};
+    $('deleteDescription').textContent=description;
+    $('confirmDelete').disabled=false;
+    $('confirmDelete').textContent=isSingle?'Excluir indicação':'Excluir aluno e todos os indicados';
+    openModal('deleteModal');
+    $('cancelDelete').focus();
+  }
+  function cancelDeletion(){deletionRequest=null;closeModal('deleteModal');}
+  $('cancelDelete').addEventListener('click',cancelDeletion);
+  $('deleteBackdrop').addEventListener('click',cancelDeletion);
+  $('confirmDelete').addEventListener('click',async()=>{
+    if(!deletionRequest)return;
+    const target=deletionRequest,btn=$('confirmDelete');
+    btn.disabled=true;btn.textContent='Excluindo...';
+    try{
+      const result=await request(target.kind==='indicacao'?'excluir_indicacao':'excluir_aluno',
+        target.kind==='indicacao'?{id:target.id}:{nome:target.nome,whatsapp:target.whatsapp});
+      if(!result.ok)throw new Error('A exclusão não foi confirmada.');
+      if(target.kind==='aluno')state.expanded.delete(target.key);
+      cancelDeletion();btn.disabled=false;
+      const updated=await request('listar');
+      state.entries=updated.indicacoes||[];
+      refreshTable();
+      toast(result.excluidas+' registro(s) excluído(s) com sucesso.');
+    }catch(err){toast(err.message,true);btn.disabled=false;btn.textContent='Tentar excluir novamente';}
+  });
+  function renderDetailRow(group){
+    const row=document.createElement('tr');row.className='group-expanded-row';
+    const td=document.createElement('td');td.colSpan=6;
+    const wrapper=document.createElement('div');wrapper.className='group-expanded-panel';
+    const intro=document.createElement('p');intro.className='group-detail-note';
+    intro.textContent='Indicações de '+group.nome+' — '+group.items.length+' pessoa(s) cadastrada(s). Status e exclusões são individuais.';
+    wrapper.appendChild(intro);
+    const scroll=document.createElement('div');scroll.className='group-detail-scroll';
+    const table=document.createElement('table');table.className='group-detail-table';
+    const header=document.createElement('thead');const tr=document.createElement('tr');
+    ['DATA','INDICADO / WHATSAPP','SITUAÇÃO','PRÊMIO','AÇÃO'].forEach(title=>{const th=document.createElement('th');th.textContent=title;tr.appendChild(th);});
+    header.appendChild(tr);table.appendChild(header);
+    const tbody=document.createElement('tbody');
+    group.items.forEach(item=>{
+      const r=document.createElement('tr');
+      r.appendChild(cell(fmtDate(item.criado_em)));
+      addPerson(r,item.amigo_nome,item.amigo_whatsapp,item.amigo_rede_social);
+      const statusTd=document.createElement('td'),select=document.createElement('select');
+      select.className='status-select group-status';
+      select.setAttribute('aria-label','Status de '+item.amigo_nome);
+      for(const [key,title] of Object.entries(statuses)){
+        const opt=document.createElement('option');opt.value=key;opt.textContent=title;
+        if(key==='pago'&&!isEligible(group)&&item.status!=='pago'){opt.disabled=true;opt.title='Requer 10 indicações cumulativas';}
+        select.appendChild(opt);
+      }
+      select.value=item.status;
+      select.addEventListener('change',async()=>{
+        const previous=item.status;
+        select.disabled=true;
+        try{
+          await request('atualizar',{id:item.id,status:select.value});
+          item.status=select.value;
+          refreshTable();
+          toast('Status atualizado para '+statuses[item.status]+'.');
+        }catch(err){select.value=previous;toast(err.message,true);}
+        finally{select.disabled=false;}
+      });
+      statusTd.appendChild(select);r.appendChild(statusTd);
+      const prize=item.status==='pago'?money(BONUS)+' pago'
+        :item.status==='matriculado'?(isEligible(group)?money(BONUS)+' a pagar':'Aguardando 10'):'—';
+      r.appendChild(cell(prize,'group-prize'));
+      const actions=document.createElement('td');
+      actions.appendChild(button('Excluir','btn-delete-item',()=>askDeletion('indicacao',group,item)));
+      r.appendChild(actions);tbody.appendChild(r);
+    });
+    table.appendChild(tbody);scroll.appendChild(table);wrapper.appendChild(scroll);
+    td.appendChild(wrapper);row.appendChild(td);return row;
+  }
   function refreshTable(){
-    const all=state.entries,q=$('searchInput').value.toLocaleLowerCase('pt-BR').trim(),status=$('statusFilter').value;
-    state.filtered=all.filter(r=>(status==='all'||r.status===status)&&(!q||[r.aluno_nome,r.aluno_whatsapp,r.amigo_nome,r.amigo_whatsapp,r.aluno_curso,r.amigo_curso,r.aluno_rede_social,r.amigo_rede_social].some(v=>String(v||'').toLocaleLowerCase('pt-BR').includes(q))));
+    const all=state.entries;
+    const query=$('searchInput').value.toLocaleLowerCase('pt-BR').trim();
+    const status=$('statusFilter').value;
+    state.groups=groupData();
+    state.filtered=all.filter(r=>(status==='all'||r.status===status) &&
+      (!query||[r.aluno_nome,r.aluno_whatsapp,r.aluno_rede_social,
+        r.amigo_nome,r.amigo_whatsapp].some(v=>String(v||'').toLocaleLowerCase('pt-BR').includes(query))));
+    const visibleIds=new Set(state.filtered.map(r=>r.id));
+    state.visibleGroups=state.groups.filter(g=>g.items.some(r=>visibleIds.has(r.id)));
+    $('statParticipants').textContent=state.groups.length.toLocaleString('pt-BR');
+    $('statEligible').textContent=state.groups.filter(isEligible).length.toLocaleString('pt-BR');
     $('statTotal').textContent=all.length.toLocaleString('pt-BR');
     $('statEnrolled').textContent=all.filter(r=>r.status==='matriculado'||r.status==='pago').length.toLocaleString('pt-BR');
-    $('statOwed').textContent=money(all.filter(r=>r.status==='matriculado').length*BONUS);
+    $('statOwed').textContent=money(state.groups.reduce((sum,g)=>sum+owedCount(g),0)*BONUS);
     $('statPaid').textContent=money(all.filter(r=>r.status==='pago').length*BONUS);
-    $('filteredCount').textContent=state.filtered.length;
-    $('tableSummary').textContent=`Mostrando ${state.filtered.length} de ${all.length} indicações`;
+    $('filteredCount').textContent=state.visibleGroups.length;
+    $('tableSummary').textContent='Mostrando '+state.visibleGroups.length+' de '+state.groups.length+' participantes ('+state.filtered.length+' indicações nos filtros)';
     const tbody=$('referralRows');tbody.replaceChildren();
-    if(!state.filtered.length){const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=6;td.className='table-empty';td.textContent='Nenhuma indicação encontrada para este filtro.';tr.appendChild(td);tbody.appendChild(tr);return;}
-    const frag=document.createDocumentFragment();state.filtered.forEach(r=>{
-      const tr=document.createElement('tr');
-      const date=document.createElement('td');date.textContent=fmtDate(r.criado_em);tr.appendChild(date);
-      addPerson(tr,r.aluno_nome,r.aluno_whatsapp,r.aluno_rede_social);
-      addPerson(tr,r.amigo_nome,r.amigo_whatsapp,r.amigo_rede_social);
-      const course=document.createElement('td');course.textContent=({'qr':'QR Code','cartaz-qr':'QR Code','formulario':'Formulário'}[r.origem]||r.origem||'Formulário');tr.appendChild(course);
-      const scell=document.createElement('td'),wrapper=document.createElement('span'),sel=document.createElement('select');wrapper.className=`badge-status status-${r.status}`;sel.className='status-select';sel.setAttribute('aria-label',`Status da indicação ${r.amigo_nome}`);
-      Object.keys(statuses).forEach(key=>{const opt=document.createElement('option');opt.value=key;opt.textContent=statuses[key];sel.appendChild(opt)});sel.value=r.status;
-      sel.addEventListener('change',async ()=>{const prev=r.status,next=sel.value;sel.disabled=true;try{await request('atualizar',{id:r.id,status:next});r.status=next;refreshTable();toast(`Status alterado para ${statuses[next]}.`);}catch(err){sel.value=prev;toast(err.message,true);}finally{sel.disabled=false;}});
-      wrapper.appendChild(sel);scell.appendChild(wrapper);tr.appendChild(scell);
-      const bonus=document.createElement('td');bonus.className=r.status==='pago'||r.status==='matriculado'?'bonus-paid':'bonus-pending';bonus.textContent=['pago','matriculado'].includes(r.status)?money(BONUS):'—';tr.appendChild(bonus);frag.appendChild(tr);
-    });tbody.appendChild(frag);
+    if(!state.visibleGroups.length){
+      const tr=document.createElement('tr');const td=cell('Nenhum participante encontrado para os filtros.','table-empty');
+      td.colSpan=6;tr.appendChild(td);tbody.appendChild(tr);return;
+    }
+    const frag=document.createDocumentFragment();
+    state.visibleGroups.forEach(group=>{
+      const tr=document.createElement('tr');tr.className='group-main-row';
+      const person=document.createElement('td');
+      const strong=document.createElement('strong');strong.className='table-name';strong.textContent=group.nome;
+      const phone=document.createElement('a');phone.className='table-secondary';
+      phone.textContent=formatPhone(group.whatsapp);phone.href='https://wa.me/55'+group.whatsapp;
+      phone.target='_blank';phone.rel='noopener noreferrer';
+      person.append(strong,phone);
+      if(group.social){const social=document.createElement('span');social.className='table-social';social.textContent=group.social;person.appendChild(social);}
+      tr.appendChild(person);
+      const qty=document.createElement('td');const qtyNumber=document.createElement('strong');qtyNumber.className='group-count';
+      qtyNumber.textContent=String(group.items.length);qty.appendChild(qtyNumber);
+      qty.appendChild(document.createTextNode(' pessoa(s)'));tr.appendChild(qty);
+      const eligibleCell=document.createElement('td');
+      const badge=document.createElement('span');badge.className='validation-badge '+(isEligible(group)?'eligible':'incomplete');
+      badge.textContent=participantStatus(group);eligibleCell.appendChild(badge);tr.appendChild(eligibleCell);
+      tr.appendChild(cell(enrolledCount(group)+' matrícula(s)'));
+      const amounts=document.createElement('td');amounts.className='summary-prizes';
+      const toPay=document.createElement('span');toPay.textContent=money(owedCount(group)*BONUS)+' a pagar';
+      const alreadyPaid=document.createElement('small');alreadyPaid.textContent=money(paidCount(group)*BONUS)+' pago';
+      amounts.append(toPay,alreadyPaid);tr.appendChild(amounts);
+      const actions=document.createElement('td');actions.className='group-actions';
+      const expanded=state.expanded.has(group.key);
+      const expand=button(expanded?'Ocultar nomes ↑':'Listar nomes ↓','btn-expand',()=>{
+        state.expanded.has(group.key)?state.expanded.delete(group.key):state.expanded.add(group.key);refreshTable();
+      });
+      expand.setAttribute('aria-expanded',String(expanded));
+      expand.setAttribute('aria-label',(expanded?'Ocultar':'Listar')+' indicados de '+group.nome);
+      const remove=button('Excluir aluno','btn-delete-group',()=>askDeletion('aluno',group));
+      actions.append(expand,remove);tr.appendChild(actions);
+      frag.appendChild(tr);
+      if(expanded)frag.appendChild(renderDetailRow(group));
+    });
+    tbody.appendChild(frag);
   }
-  function addPerson(tr,name,phone,social){const td=document.createElement('td'),strong=document.createElement('span'),link=document.createElement('a');strong.className='table-name';strong.textContent=name;link.className='table-secondary';link.textContent=formatPhone(phone);link.href=`https://wa.me/55${onlyDigits(phone)}`;link.target='_blank';link.rel='noopener noreferrer';td.append(strong,link);if(social){const sm=document.createElement('span');sm.className='table-social';sm.textContent='@ '+social.replace(/^@/,'');td.appendChild(sm);}tr.appendChild(td);}
-  // Prefixos potencialmente interpretados como fórmulas pelo Excel não podem ser exportados como fórmulas.
-  const safeCell = value => { const s=String(value??'');return /^[\s]*[=+\-@\t\r]/.test(s)?`'${s}`:s; };
-  const exportData=()=>state.filtered.map(r=>[
-    fmtDate(r.criado_em),safeCell(r.aluno_nome),safeCell(formatPhone(r.aluno_whatsapp)),
-    safeCell(r.aluno_rede_social||''),safeCell(r.amigo_nome),
-    safeCell(formatPhone(r.amigo_whatsapp)),statuses[r.status]||r.status,
-    ['matriculado','pago'].includes(r.status)?BONUS:0,
-    r.status==='pago'?'Sim':'Não',safeCell(r.origem||''),r.id
+  function addPerson(tr,name,phone,social){
+    const td=document.createElement('td'),strong=document.createElement('span'),link=document.createElement('a');
+    strong.className='table-name';strong.textContent=name;
+    link.className='table-secondary';link.textContent=formatPhone(phone);
+    link.href='https://wa.me/55'+onlyDigits(phone);link.target='_blank';link.rel='noopener noreferrer';
+    td.append(strong,link);
+    if(social){const sm=document.createElement('span');sm.className='table-social';sm.textContent=social;td.appendChild(sm);}
+    tr.appendChild(td);
+  }
+
+  const simpleReport=()=>state.visibleGroups.map(g=>[
+    escapeReport(g.nome),escapeReport(formatPhone(g.whatsapp)),escapeReport(g.social),
+    g.items.length,isEligible(g)?'Validado':participantStatus(g),
+    enrolledCount(g),owedCount(g)*BONUS,paidCount(g)*BONUS
   ]);
-  const columns=['Data','Aluno que indicou','WhatsApp do aluno','Rede social do aluno','Amigo indicado','WhatsApp do amigo','Status','Bônus (R$)','Pago?','Origem','Identificador'];
-  function makeFilename(ext){const now=new Date(),ds=[now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0')].join('-');return `Treinacamp_Indicacoes_${ds}.${ext}`;}
+  const detailedReport=()=>state.filtered.map(r=>{
+    const g=state.groups.find(g=>g.key===studentKey(r));
+    return [fmtDate(r.criado_em),escapeReport(r.aluno_nome),escapeReport(formatPhone(r.aluno_whatsapp)),
+      escapeReport(r.aluno_rede_social),escapeReport(r.amigo_nome),escapeReport(formatPhone(r.amigo_whatsapp)),
+      statuses[r.status]||r.status,g&&isEligible(g)?'Validado':'Aguardando 10',
+      r.status==='pago'?'Pago':r.status==='matriculado'&&g&&isEligible(g)?'A pagar':'Não elegível',
+      escapeReport(r.origem),r.id];
+  });
+  const reportSpec=()=>{
+    const simple=$('exportMode').value==='simples';
+    return simple
+      ?{simple,rows:simpleReport(),columns:['Aluno','WhatsApp','Rede social','Total indicado','Validação','Matrículas','R$ a pagar','R$ já pago'],label:'Resumo por aluno'}
+      :{simple,rows:detailedReport(),columns:['Data','Aluno','WhatsApp aluno','Rede social','Indicado','WhatsApp indicado','Status','Validação','Situação bônus','Origem','ID'],label:'Indicações detalhadas'};
+  };
+  function reportFilename(ext,kind){
+    const now=new Date();const date=[now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0')].join('-');
+    return 'Treinacamp_Indicacoes_'+kind+'_'+date+'.'+ext;
+  }
   $('exportXlsx').addEventListener('click',()=>{
-    if(!window.XLSX){toast('Biblioteca Excel indisponível. Verifique sua conexão com a internet.',true);return;}
-    const rows=exportData(),wb=XLSX.utils.book_new();
-    const sheet=XLSX.utils.aoa_to_sheet([columns,...rows]);
-    sheet['!cols']=[{wch:20},{wch:30},{wch:20},{wch:30},{wch:30},{wch:20},{wch:16},{wch:14},{wch:10},{wch:20},{wch:39}];
-    sheet['!autofilter']={ref:sheet['!ref']};sheet['!freeze']={xSplit:0,ySplit:1};
-    XLSX.utils.book_append_sheet(wb,sheet,'Indicações');
-    const summary=[['TREINACAMP • AMIGO DA ONÇA'],['RELATÓRIO DE INDICAÇÕES'],['Gerado em',fmtDate(new Date().toISOString())],['Filtro de status',$('statusFilter').selectedOptions[0]?.textContent||'Todos'],['Indicações exportadas',rows.length],['Matriculados (filtro)',state.filtered.filter(r=>['matriculado','pago'].includes(r.status)).length],['Bônus a pagar (filtro)',state.filtered.filter(r=>r.status==='matriculado').length*BONUS],['Bônus pagos (filtro)',state.filtered.filter(r=>r.status==='pago').length*BONUS]];
-    const s=XLSX.utils.aoa_to_sheet(summary);s['!cols']=[{wch:34},{wch:29}];XLSX.utils.book_append_sheet(wb,s,'Resumo');
-    XLSX.writeFile(wb,makeFilename('xlsx'),{bookType:'xlsx'});toast(`Excel gerado com ${rows.length} indicação(ões).`);
+    if(!window.XLSX){toast('Biblioteca Excel indisponível. Verifique sua conexão.',true);return;}
+    const rpt=reportSpec(),wb=XLSX.utils.book_new();
+    const sheet=XLSX.utils.aoa_to_sheet([rpt.columns,...rpt.rows]);
+    sheet['!cols']=rpt.columns.map((header,i)=>({wch:Math.max(16,Math.min(i===0||i===1?34:28,header.length+11))}));
+    sheet['!autofilter']={ref:sheet['!ref']};
+    XLSX.utils.book_append_sheet(wb,sheet,rpt.simple?'Por aluno':'Por indicação');
+    const summary=XLSX.utils.aoa_to_sheet([
+      ['TREINACAMP — AMIGO DA ONÇA'],['Tipo',rpt.label],
+      ['Gerado em',fmtDate(new Date().toISOString())],
+      ['Alunos no relatório',state.visibleGroups.length],
+      ['Indicações conforme filtros',state.filtered.length],
+      ['Alunos validados no filtro',state.visibleGroups.filter(isEligible).length],
+      ['Regra','10 indicações acumuladas pelo mesmo nome completo e WhatsApp']
+    ]);
+    summary['!cols']=[{wch:33},{wch:58}];
+    XLSX.utils.book_append_sheet(wb,summary,'Resumo');
+    XLSX.writeFile(wb,reportFilename('xlsx',rpt.simple?'Simples':'Detalhado'),{bookType:'xlsx'});
+    toast('Excel '+rpt.label.toLowerCase()+' gerado com '+rpt.rows.length+' linha(s).');
   });
   $('exportPdf').addEventListener('click',()=>{
-    if(!window.jspdf?.jsPDF){toast('Biblioteca PDF indisponível. Verifique sua conexão com a internet.',true);return;}
-    const {jsPDF}=window.jspdf,doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'}),rows=exportData();
-    doc.setFillColor(8,31,75);doc.rect(0,0,297,40,'F');doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(20);doc.text('TREINACAMP  |  Amigo da Onça',14,17);doc.setFont('helvetica','normal');doc.setFontSize(9);doc.text(`Relatório de indicações • ${fmtDate(new Date().toISOString())}`,14,26);
-    doc.setTextColor(34,54,83);doc.setFont('helvetica','bold');doc.setFontSize(10);doc.text(`${rows.length} indicações  |  ${state.filtered.filter(r=>['pago','matriculado'].includes(r.status)).length} matrículas  |  ${money(state.filtered.filter(r=>r.status==='matriculado').length*BONUS)} a pagar`,14,49);
+    if(!window.jspdf?.jsPDF){toast('Biblioteca PDF indisponível. Verifique sua conexão.',true);return;}
+    const rpt=reportSpec(),jsPDF=window.jspdf.jsPDF,doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+    doc.setFillColor(8,31,75);doc.rect(0,0,297,39,'F');
+    doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(18);
+    doc.text('TREINACAMP | Amigo da Onça',13,17);
+    doc.setFont('helvetica','normal');doc.setFontSize(10);doc.text(rpt.label+' — '+fmtDate(new Date().toISOString()),13,26);
+    doc.setTextColor(38,55,82);doc.setFontSize(9);
+    doc.text(state.visibleGroups.length+' alunos • '+state.filtered.length+' indicações nos filtros • '+state.visibleGroups.filter(isEligible).length+' participantes validados',13,47);
     if(typeof doc.autoTable==='function'){
-      doc.autoTable({startY:55,head:[['Data','Aluno / Rede social','WhatsApp','Amigo indicado','WhatsApp','Status','Bônus']],body:rows.map(r=>[r[0],r[1]+(r[3]?'\n'+r[3]:''),r[2],r[4],r[5],r[6],money(r[7])]),theme:'grid',styles:{font:'helvetica',fontSize:7,cellPadding:2.5,overflow:'linebreak',textColor:[39,55,80]},headStyles:{fillColor:[13,47,98],fontStyle:'bold',textColor:255},alternateRowStyles:{fillColor:[248,250,253]},margin:{top:15,left:13,right:13,bottom:16},columnStyles:{0:{cellWidth:26},1:{cellWidth:57},2:{cellWidth:31},3:{cellWidth:58},4:{cellWidth:31},5:{cellWidth:37},6:{cellWidth:28}},didDrawPage:data=>{const n=doc.internal.getNumberOfPages();doc.setTextColor(124,136,153);doc.setFontSize(8);doc.text(`Treinacamp • Uso interno   |   Página ${n}`,14,202);}});
-    } else {doc.setFontSize(12);doc.text('O módulo de tabelas não foi carregado. Recarregue a página.',14,68);}
-    doc.save(makeFilename('pdf'));toast(`PDF gerado com ${rows.length} indicação(ões).`);
+      let head,body,widths;
+      if(rpt.simple){
+        head=[['Aluno','WhatsApp','Total','Validação','Matrículas','A pagar','Pago']];
+        body=rpt.rows.map(row=>[row[0],row[1],String(row[3]),row[4],String(row[5]),money(row[6]),money(row[7])]);
+        widths={0:{cellWidth:67},1:{cellWidth:39},2:{cellWidth:25},3:{cellWidth:35},4:{cellWidth:30},5:{cellWidth:35},6:{cellWidth:35}};
+      }else{
+        head=[['Data','Aluno','WhatsApp','Indicado','WhatsApp','Status','Validação']];
+        body=rpt.rows.map(row=>[row[0],row[1],row[2],row[4],row[5],row[6],row[7]]);
+        widths={0:{cellWidth:30},1:{cellWidth:60},2:{cellWidth:32},3:{cellWidth:60},4:{cellWidth:32},5:{cellWidth:28},6:{cellWidth:28}};
+      }
+      doc.autoTable({startY:54,head,body,theme:'grid',
+        styles:{font:'helvetica',fontSize:7,cellPadding:3,overflow:'linebreak',textColor:[31,55,87]},
+        headStyles:{fillColor:[13,47,98],textColor:255},alternateRowStyles:{fillColor:[246,249,253]},
+        columnStyles:widths,margin:{left:13,right:13,bottom:17},didDrawPage:()=>{
+          const n=doc.internal.getCurrentPageInfo().pageNumber;
+          doc.setFontSize(8);doc.setTextColor(128,137,154);
+          doc.text('Treinacamp • Uso interno • Página '+n,13,202);
+        }});
+    }else{doc.text('A biblioteca de tabelas não está disponível. Recarregue a página.',13,64);}
+    doc.save(reportFilename('pdf',rpt.simple?'Simples':'Detalhado'));
+    toast('PDF '+rpt.label.toLowerCase()+' gerado.');
   });
   // Ao atualizar a página, exige-se novo acesso caso a sessão tenha expirado.
   if(state.token)request('verificar',{},state.token).then(()=>loadDashboard()).catch(()=>{state.token='';sessionStorage.removeItem('tc_admin_token');});
