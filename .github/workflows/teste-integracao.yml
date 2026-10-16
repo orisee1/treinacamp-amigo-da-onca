@@ -164,15 +164,14 @@ jobs:
           code,result=call({'action':'criar_lote','aluno':{'nome':'Teste de Validacao','whatsapp':'11900000199'},'amigos':[],'origem':'teste_nao_gravar','consentimento':True})
           assert code==422 and 'amigo' in result.get('error','').lower(),(code,result)
           print('Backend rejeita lista vazia, sem criar registros.')
-          # Registro de teste temporário foi criado pelo administrador do banco antes desta execução.
-          good={'action':'consultar_indicacoes','nome':'Teste Consulta Treinacamp','whatsapp':'11900000888'}
-          code,result=call(good)
-          assert code==200 and result.get('encontrado') is True and result.get('quantidade')==2,(code,result)
-          assert 'indicacoes' not in result and 'amigo_nome' not in result and 'aluno_nome' not in result
-          code,result=call({**good,'nome':'teste Consulta Treinacamp'})
-          assert code==200 and result.get('encontrado') is False,(code,result)
-          code,result=call({**good,'whatsapp':'11900000887'})
-          assert code==200 and result.get('encontrado') is False,(code,result)
-          print('Consulta pública: correspondência exata confirmada; nome/telefone divergentes não retornam resultados.')
+          # Esta verificação não depende de registros temporários e não modifica o banco.
+          payload={'action':'consultar_indicacoes','nome':'Nome Inexistente de Verificacao Automatica','whatsapp':'11900000888'}
+          code,result=call(payload)
+          assert code==200 and result.get('ok') is True and result.get('encontrado') is False,(code,result)
+          assert result.get('quantidade')==0 and 'indicacoes' not in result and 'amigo_nome' not in result,(code,result)
+          code,result=call({**payload,'whatsapp':'000'})
+          assert code==422 and 'error' in result,(code,result)
+          print('Consulta pública disponível e validação de entradas funcionando, sem persistir dados.')
+
 
           PY
