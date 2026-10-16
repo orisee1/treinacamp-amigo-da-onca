@@ -18,12 +18,13 @@ jobs:
           from pathlib import Path
           html=Path('index.html').read_text(encoding='utf-8')
           code=Path('app.js').read_text(encoding='utf-8')
-          for marker in ('statParticipants','statEligible','exportMode','deleteModal','deleteBackdrop','confirmDelete','cancelDelete','referralRows','studentSocial','friendsGrid'):
+          for marker in ('statParticipants','statEligible','exportMode','deleteModal','deleteBackdrop','confirmDelete','cancelDelete','referralRows','studentSocial','friendsGrid','consultModal','openConsult','consultName','consultPhone','consultResult','consultCount','consultForm'):
               assert 'id="'+marker+'"' in html,marker
           assert 'id="qrSide"' not in html
           for marker in ("request('criar_lote'","request('listar'","request('atualizar'","excluir_indicacao","excluir_aluno","visibleGroups"):
               assert marker in code,marker
-          print('Estrutura de cadastro e painel válida')
+          assert "request('consultar_indicacoes'" in code
+          print('Estrutura de cadastro, painel e consulta válida')
           PY
       - name: Testar interface com navegador simulado
         run: |
@@ -51,6 +52,10 @@ jobs:
             w.fetch=async (_url,options)=>{
               const body=JSON.parse(options.body);sent.push(body);
               const result=body.action==='criar_lote'?{ok:true,quantidade:body.amigos.length,total_acumulado:body.amigos.length,apto:false}:
+                body.action==='consultar_indicacoes'?(
+                  body.nome==='Maria Da Silva' && body.whatsapp==='11911111111'
+                    ? {ok:true,encontrado:true,quantidade:2,validado:false,faltam:8}
+                    : {ok:true,encontrado:false,quantidade:0,validado:false,faltam:10}):
                 body.action==='login'?{ok:true,token:'fake-session'}:
                 body.action==='listar'?{indicacoes:records}:
                 body.action==='atualizar'?{ok:true}:
@@ -77,6 +82,22 @@ jobs:
             $('newReferralBtn').click();
             assert.equal($('studentName').value,'Maria da Silva');
             assert.equal($('friendsGrid').children.length,0);
+            $('openConsult').click();
+            assert.equal($('consultModal').hidden,false);
+            $('consultName').value='Maria Da Silva';
+            $('consultPhone').value='11911111111';
+            $('consultForm').dispatchEvent(new w.Event('submit',{cancelable:true,bubbles:true}));
+            await new Promise(r=>setTimeout(r,25));
+            assert.equal(sent.filter(x=>x.action==='consultar_indicacoes').length,1);
+            assert.equal($('consultCount').textContent,'2');
+            assert.match($('consultStatus').textContent,/Faltam 8/);
+            $('consultName').value='maria Da Silva';
+            $('consultForm').dispatchEvent(new w.Event('submit',{cancelable:true,bubbles:true}));
+            await new Promise(r=>setTimeout(r,25));
+            assert.equal($('consultResult').hidden,true);
+            assert.match($('consultError').textContent,/não localizado/i);
+            $('closeConsult').click();
+            assert.equal($('consultModal').hidden,true);
             w.document.dispatchEvent(new w.KeyboardEvent('keydown',{altKey:true,shiftKey:true,key:'E',bubbles:true}));
             $('adminPin').value='teste';
             $('loginForm').dispatchEvent(new w.Event('submit',{cancelable:true,bubbles:true}));
@@ -143,5 +164,15 @@ jobs:
           code,result=call({'action':'criar_lote','aluno':{'nome':'Teste de Validacao','whatsapp':'11900000199'},'amigos':[],'origem':'teste_nao_gravar','consentimento':True})
           assert code==422 and 'amigo' in result.get('error','').lower(),(code,result)
           print('Backend rejeita lista vazia, sem criar registros.')
+          # Registro de teste temporário foi criado pelo administrador do banco antes desta execução.
+          good={'action':'consultar_indicacoes','nome':'Teste Consulta Treinacamp','whatsapp':'11900000888'}
+          code,result=call(good)
+          assert code==200 and result.get('encontrado') is True and result.get('quantidade')==2,(code,result)
+          assert 'indicacoes' not in result and 'amigo_nome' not in result and 'aluno_nome' not in result
+          code,result=call({**good,'nome':'teste Consulta Treinacamp'})
+          assert code==200 and result.get('encontrado') is False,(code,result)
+          code,result=call({**good,'whatsapp':'11900000887'})
+          assert code==200 and result.get('encontrado') is False,(code,result)
+          print('Consulta pública: correspondência exata confirmada; nome/telefone divergentes não retornam resultados.')
 
           PY
