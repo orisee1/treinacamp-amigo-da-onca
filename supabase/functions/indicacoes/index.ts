@@ -74,9 +74,9 @@ Deno.serve(async(req:Request):Promise<Response>=>{
   if(req.method!=='POST')return reply({error:'Método não permitido'},405,origin);
   if(origin&&!allowedOrigins.includes(origin))return reply({error:'Origem não autorizada'},403,origin);
   if(!SUPABASE_URL||!SERVICE_KEY)return reply({error:'O servidor ainda não foi configurado. Contate a administração.'},503,origin);
-  if(Number(req.headers.get('content-length')||0)>6500)return reply({error:'Requisição muito grande'},413,origin);
+  if(Number(req.headers.get('content-length')||0)>512000)return reply({error:'Requisição muito grande'},413,origin);
   let input:Record<string,unknown>;
-  try{input=await req.json();if(!input || typeof input!=='object'||Array.isArray(input))throw 0;}
+  try{const raw=await req.text();if(encoder.encode(raw).length>512000)return reply({error:'Lista muito grande para um único envio. Entre em contato com a escola.'},413,origin);input=JSON.parse(raw);if(!input || typeof input!=='object'||Array.isArray(input))throw 0;}
   catch{return reply({error:'Solicitação inválida'},400,origin);}
   const action=input.action;
   const ip=(req.headers.get('cf-connecting-ip')||req.headers.get('x-forwarded-for')?.split(',')[0]||'unknown').trim();
@@ -89,28 +89,49 @@ Deno.serve(async(req:Request):Promise<Response>=>{
       if(authError || !admin)return reply({error:'Acesso administrativo ainda não configurado'},503,origin);
       return reply({ok:true},200,origin);
     }
-    if(action==='criar'){
+    if(action==='criar_lote'){
       const l=await useLimit(`envio:${ipHash}`,30,60);
       if(!l.allowed)return reply({error:'Muitas tentativas deste local. Aguarde alguns minutos.'},429,origin);
-      const d=input.indicacao as Record<string,unknown>;
-      if(!d||typeof d!=='object')return reply({error:'Dados da indicação ausentes'},400,origin);
-      const alunoNome=text(d.aluno_nome,120),amigoNome=text(d.amigo_nome,120);
-      const alunoPhone=digits(d.aluno_whatsapp),amigoPhone=digits(d.amigo_whatsapp);
-      const curso=text(d.amigo_curso,100),alunoCurso=text(d.aluno_curso,100);
-      const alunoRedeSocial=text(d.aluno_rede_social,120),amigoRedeSocial=text(d.amigo_rede_social,120);
-      if(alunoNome.length<3||amigoNome.length<3||!validPhone(alunoPhone)||!validPhone(amigoPhone)||curso.length<2||d.consentimento!==true)
-        return reply({error:'Revise os campos e confirme a autorização para contato.'},422,origin);
-      if(alunoPhone===amigoPhone)return reply({error:'O WhatsApp indicado precisa ser diferente do seu.'},422,origin);
-      const {data,error}=await db.from('indicacoes').insert({
-        aluno_nome:alunoNome,aluno_whatsapp:alunoPhone,aluno_curso:alunoCurso||null,aluno_rede_social:alunoRedeSocial||null,
-        amigo_nome:amigoNome,amigo_whatsapp:amigoPhone,amigo_curso:curso,amigo_rede_social:amigoRedeSocial||null,
-        consentimento_confirmado:true,origem:text(d.origem||'qr',40)||'qr',
-      }).select('id').single();
-      if(error){
-        if(error.code==='23505')return reply({error:'Este amigo já consta em uma indicação da campanha.'},409,origin);
-        return reply({error:'Não foi possível salvar sua indicação. Tente novamente.'},500,origin);
+      const aluno=input.aluno as Record<string,unknown>;
+      const amigos=input.amigos;
+      if(!aluno||typeof aluno!=='object'||!Array.isArray(amigos))
+        return reply({error:'Dados ou lista de indicados ausentes'},400,origin);
+      if(amigos.length<10)
+        return reply({error:'Adicione pelo menos 10 amigos antes de enviar suas indicações.'},422,origin);
+      const nome=text(aluno.nome,120),whatsapp=digits(aluno.whatsapp),social=text(aluno.rede_social,120);
+      if(nome.length<3||!validPhone(whatsapp)||input.consentimento!==true)
+        return reply({error:'Preencha seus dados e confirme a autorização dos amigos.'},422,origin);
+      const lista:{nome:string,whatsapp:string}[]=[];
+      const telefones=new Set<string>();
+      for(const item of amigos){
+        if(!item||typeof item!=='object'||Array.isArray(item))
+          return reply({error:'Uma das indicações contém dados inválidos.'},422,origin);
+        const a=item as Record<string,unknown>;
+        const amigoNome=text(a.nome,120),amigoWhats=digits(a.whatsapp);
+        if(amigoNome.length<3||!validPhone(amigoWhats))
+          return reply({error:'Revise os nomes e WhatsApps de todos os indicados.'},422,origin);
+        if(amigoWhats===whatsapp)
+          return reply({error:'Você não pode indicar seu próprio WhatsApp.'},422,origin);
+        if(telefones.has(amigoWhats))
+          return reply({error:'Sua lista tem um WhatsApp repetido. Corrija antes de enviar.'},422,origin);
+        telefones.add(amigoWhats);
+        lista.push({nome:amigoNome,whatsapp:amigoWhats});
       }
-      return reply({ok:true,id:data.id},201,origin);
+      // A função PostgreSQL realiza a gravação em uma única transação:
+      // em caso de erro, nenhum dos amigos da lista é salvo.
+      const {data,error}=await db.rpc('criar_indicacoes_em_lote',{
+        p_aluno_nome:nome,
+        p_aluno_whatsapp:whatsapp,
+        p_aluno_rede_social:social,
+        p_amigos:lista,
+        p_origem:text(input.origem||'formulario',40),
+        p_consentimento:true
+      });
+      if(error){
+        if(error.code==='23505')return reply({error:'Um dos WhatsApps já foi indicado anteriormente. Confira a lista com a escola. Nenhuma indicação deste envio foi registrada.'},409,origin);
+        return reply({error:'Não foi possível registrar toda a lista. Nenhuma indicação deste envio foi salva. Verifique os dados e tente novamente.'},500,origin);
+      }
+      return reply({ok:true,quantidade:data.quantidade,protocolo:data.protocolo},201,origin);
     }
     if(action==='login'){
       const rateKey=`login:${ipHash}`;
