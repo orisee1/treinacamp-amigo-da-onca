@@ -13,27 +13,49 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validar JavaScript e arquivos de identidade
+      - name: Validar JavaScript e estrutura do novo formulário
         run: |
           node --check app.js
           test -s assets/logo-treinacamp-horizontal.webp
           test -s assets/logo-treinacamp-simbolo.webp
-          test -s index.html
-      - name: Testar saude do backend Supabase
+          python - <<'PY'
+          from pathlib import Path
+          html=Path('index.html').read_text()
+          js=Path('app.js').read_text()
+          for marker in ['friendName','friendPhone','friendsGrid','friendsCount','celebrationName','successModal','studentSocial','addFriendBtn']:
+              assert marker in html and marker in js, marker
+          assert 'id="friendSocial"' not in html
+          assert 'id="friendCourse"' not in html
+          assert "request('criar_lote'" in js
+          print('Estrutura dinâmica e script validados.')
+          PY
+      - name: Testar saúde do backend e mínimo de dez
+        env:
+          FUNCTION_URL: https://tbswlevtdbqspnkdkeuj.supabase.co/functions/v1/indicacoes
+          PUBLISHABLE_KEY: sb_publishable_osf-t3g5GwfhQc5RugsxjQ_89G8LuBl
         run: |
-          curl --fail-with-body -sS 'https://tbswlevtdbqspnkdkeuj.supabase.co/functions/v1/indicacoes' \
-            -H 'Content-Type: application/json' \
-            -H 'Origin: https://orisee1.github.io' \
-            -H 'apikey: sb_publishable_osf-t3g5GwfhQc5RugsxjQ_89G8LuBl' \
-            -d '{"action":"saude"}' -o health.json
-          python -c 'import json; d=json.load(open("health.json")); assert d.get("ok") is True, d; print("Supabase responde e banco/admin estao configurados")'
-      - name: Criar indicacao sintetica de teste unico
-        if: github.event_name == 'push'
-        run: |
-          curl --fail-with-body -sS 'https://tbswlevtdbqspnkdkeuj.supabase.co/functions/v1/indicacoes' \
-            -H 'Content-Type: application/json' \
-            -H 'Origin: https://orisee1.github.io' \
-            -H 'apikey: sb_publishable_osf-t3g5GwfhQc5RugsxjQ_89G8LuBl' \
-            -d '{"action":"criar","indicacao":{"aluno_nome":"Teste Automatico Treinacamp","aluno_whatsapp":"11000000000","aluno_rede_social":"@teste_aluno","amigo_nome":"Indicado Sintetico Treinacamp","amigo_whatsapp":"11000000001","amigo_rede_social":"@teste_amigo","amigo_curso":"Informatica","consentimento":true,"origem":"teste_automatico"}}' \
-            -o criado.json
-          python -c 'import json,uuid; d=json.load(open("criado.json")); assert d.get("ok") is True; uuid.UUID(d["id"]); print("Criacao sintética passou, protocolo:",d["id"][:8])'
+          python - <<'PY'
+          import os, json, urllib.request, urllib.error
+          url=os.environ['FUNCTION_URL']
+          key=os.environ['PUBLISHABLE_KEY']
+          def send(payload):
+              data=json.dumps(payload,ensure_ascii=False).encode('utf8')
+              req=urllib.request.Request(url,data=data,headers={'Content-Type':'application/json','Origin':'https://orisee1.github.io','apikey':key},method='POST')
+              try:
+                  with urllib.request.urlopen(req,timeout=25) as response:
+                      return response.status,json.load(response)
+              except urllib.error.HTTPError as e:
+                  return e.code,json.load(e)
+          code,body=send({'action':'saude'})
+          assert code==200 and body.get('ok'),(code,body)
+          print('Banco e backend ativos.')
+          source={'nome':'Teste Automatico Lote','whatsapp':'11900000199','rede_social':'@teste'}
+          friends=[{'nome':f'Contato Sintetico {i+1:02d}','whatsapp':f'11{900000100+i:09d}'} for i in range(10)]
+          request_base={'action':'criar_lote','aluno':source,'origem':'teste_automatico_lote','consentimento':True}
+          code,body=send({**request_base,'amigos':friends[:9]})
+          assert code==422 and '10' in body.get('error',''),(code,body)
+          print('Lista com 9 pessoas rejeitada corretamente.')
+          code,body=send({**request_base,'amigos':friends})
+          assert code==201 and body.get('ok') and body.get('quantidade')==10,(code,body)
+          print('Lote de 10 pessoas salvo com sucesso:',body.get('protocolo'))
+          PY
