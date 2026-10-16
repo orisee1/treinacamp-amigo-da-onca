@@ -81,6 +81,16 @@ Este protótipo já contém aviso de privacidade e exigência de autorização d
 
 No terminal, dentro da pasta do site: `python -m http.server 5500`. Acesse `http://localhost:5500`. Os dados só serão gravados após configurar e publicar o backend, mesmo durante o teste local.
 
+## Consulta pública de indicações
+
+- A página inicial exibe o botão discreto **Consultar minhas indicações**, logo abaixo das informações principais da campanha.
+- O visitante informa o **nome completo exatamente como foi cadastrado** (a comparação distingue letras maiúsculas, acentos e espaços internos) e o **WhatsApp com DDD**.
+- O telefone é normalizado para dígitos; a consulta ocorre apenas no backend Supabase, sem acesso direto às tabelas.
+- Quando ambos os campos coincidem com registros do banco, a página mostra somente o **número de indicações acumuladas**, o progresso até dez e a situação de validação. Nenhuma lista de amigos ou telefone é disponibilizada.
+- Quando não há correspondência exata, o popup informa que o cadastro não foi localizado, sem retornar dados pessoais.
+- As tentativas são limitadas por IP e por telefone, em janelas de 15 minutos. Os hashes de telefone usados nos controles de consulta não são guardados no GitHub.
+- **Segurança:** nome completo e WhatsApp não provam a posse do telefone. A consulta é apropriada apenas para revelar uma contagem; para disponibilizar nomes, pagamentos, premiações ou outras informações sensíveis, implementar verificação por código enviado ao próprio WhatsApp ou autenticação individual.
+
 ## Operação vigente (16/10/2026)
 
 - Site: https://orisee1.github.io/treinacamp-amigo-da-onca/
