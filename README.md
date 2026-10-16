@@ -30,7 +30,7 @@ Site estático responsivo, pronto para GitHub Pages, com backend Supabase isolad
 - Após autenticação, o backend emite uma sessão assinada com validade de até 8 horas, guardada somente no `sessionStorage` do navegador.
 - São permitidas no máximo 5 tentativas de login por janela de 15 minutos, por endereço de origem detectado; a proteção reduz, mas não elimina ataques distribuídos.
 - Apenas o backend, usando a chave de serviço privada, pode ler ou alterar as indicações. Tabelas com RLS não permitem acesso direto por visitantes.
-- O banco exige consentimento, não permite autoindicação e permite cada WhatsApp indicado somente uma vez na campanha. **Cada envio precisa conter pelo menos 10 pessoas**, sem limite comercial máximo. A lista inteira é validada e inserida em uma transação atômica.
+- O banco exige consentimento, não permite autoindicação e permite cada WhatsApp indicado somente uma vez na campanha. **Cada envio pode conter uma ou mais pessoas**; os envios cumulativos são validados para premiação quando o mesmo aluno atingir dez indicados. Cada lote é gravado em uma transação atômica.
 - Este controle por senha curta é compatível com o pedido, **mas um PIN de quatro números não é adequado como única proteção de dados pessoais no longo prazo**. Recomenda-se migrar para autenticação individual com MFA antes de uso em larga escala.
 
 ## 2. Conectar o site
@@ -81,17 +81,21 @@ Este protótipo já contém aviso de privacidade e exigência de autorização d
 
 No terminal, dentro da pasta do site: `python -m http.server 5500`. Acesse `http://localhost:5500`. Os dados só serão gravados após configurar e publicar o backend, mesmo durante o teste local.
 
-## Operação atualizada (16/10/2026)
+## Operação vigente (16/10/2026)
 
-- Página oficial: https://orisee1.github.io/treinacamp-amigo-da-onca/
-- O aluno preenche **nome, WhatsApp e rede social opcional** uma vez.
-- Para cada indicado, informa **nome completo e WhatsApp** e pressiona **Indicar amigo**.
-- Os amigos aparecem em cartões removíveis e um contador mostra quantos faltam para 10; após esse mínimo pode continuar adicionando quantos quiser.
-- Se tentar enviar antes de 10, o formulário apresenta um aviso. Nome e WhatsApp incompletos impedem adicionar um novo cartão; telefones repetidos são barrados.
-- O servidor recebe `criar_lote` e chama `criar_indicacoes_em_lote`, garantindo **tudo ou nada** na gravação. O antigo envio individual `criar` não é mais aceito.
-- Após confirmação de sucesso do servidor, o aluno vê um modal com confetes e a quantidade enviada.
-- O painel ADMIN continua acessível via **Alt + Shift + E** e mantém exportações Excel e PDF, agora sem colunas de curso obrigatórias.
-- Existe um workflow de teste em `.github/workflows/teste-integracao.yml`. Dados fictícios gerados no teste devem ser excluídos após cada execução para não entrarem nos relatórios.
-- A política de privacidade da campanha precisa permanecer coerente com o tratamento de dados de dez ou mais terceiros por envio.
+- Site: https://orisee1.github.io/treinacamp-amigo-da-onca/
+- Os participantes fornecem **nome completo sem abreviações, WhatsApp e rede social opcional**; adicionam amigos individualmente com nome e WhatsApp.
+- **Pode enviar a partir de uma indicação.** Envios posteriores são somados se o nome completo normalizado (sem distinção entre maiúsculas/minúsculas e espaços extras) **e o mesmo WhatsApp** coincidirem.
+- O aluno pode indicar um amigo agora e outros em dias diferentes. **A campanha só se torna válida para premiação ao completar dez indicações acumuladas**, sem limite máximo.
+- Os WhatsApps dos amigos não podem ser repetidos, inclusive em envios anteriores. Tentativas com duplicidade são rejeitadas integralmente.
+- Após gravar, o backend responde com o número de indicações deste envio e o total acumulado. O modal confirma o recebimento sem antecipar o pagamento do prêmio.
+- Na área ADMIN (`Alt + Shift + E`), os registros são **agrupados por aluno**; o botão **Listar nomes** expande seus amigos, seus contatos e a gestão individual de status.
+- O administrador pode **excluir somente uma indicação** ou **excluir o participante e todos os indicados**, ambos com confirmação e verificação de sessão no servidor. Exclusão é definitiva.
+- Os relatórios **Excel e PDF** possuem dois modelos: **Simples** (aluno, quantidade total e validação) e **Detalhado** (cada indicação, status e dados relacionados), respeitando os filtros de pesquisa.
+- A equipe pode marcar `Matriculado` antes de dez indicações para acompanhar conversões, mas a opção `Pago` só fica disponível após o participante completar dez; o servidor também verifica o requisito.
+- O menu **Gerar QR Code** não aparece mais no painel, mas `qr.html` continua existindo para uso futuro.
+- Dados de identificadores e registros anteriores são preservados durante as migrações.
+- RLS mantém tabelas sem acesso direto de visitantes. Funções de exclusão e consultas especiais usam `service_role`, acessíveis apenas à Edge Function.
+- Ao operar, revise o regulamento da campanha, os textos de privacidade e condições de premiação com a direção. O acesso admin por PIN de quatro dígitos deve ser substituído por autenticação individual com MFA antes de operar em escala.
 
-O repositório contém o código da estrutura atual; os arquivos `supabase/schema.sql` e `supabase/functions/indicacoes/index.ts` estão alinhados ao banco e à função do projeto.
+A função atual é `supabase/functions/indicacoes/index.ts` e as funções SQL constam em `supabase/schema.sql`.
